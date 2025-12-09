@@ -1,0 +1,56 @@
+.row {
+  display: grid;
+  grid-template-columns: 180px 1fr 160px;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.label {
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.value {
+  font-weight: 700;
+  font-size: 1.2rem;
+}
+
+.toggles {
+  display: flex;
+  gap: 1rem;
+  margin: 0.75rem 0;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.yearly {
+  margin-top: 1rem;
+}
+
+.yearly table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.yearly th,
+.yearly td {
+  padding: 0.4rem 0.3rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.yearly th {
+  color: var(--muted);
+  font-weight: 600;
+}

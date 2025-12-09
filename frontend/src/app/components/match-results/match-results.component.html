@@ -1,0 +1,29 @@
+<div *ngIf="!results || results.length === 0" class="muted">No matches yet.</div>
+
+<div *ngFor="let result of results" class="result-card">
+  <div class="header">
+    <div>
+      <div class="name">{{ result.profile.full_name }}</div>
+      <div class="meta">{{ result.profile.current_title }} &#64; {{ result.profile.current_company }}</div>
+    </div>
+    <div class="links" *ngIf="result.profile.profile_url">
+      <a [href]="result.profile.profile_url" target="_blank" rel="noreferrer" class="pill">Open profile</a>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Persona</th>
+        <th>Score</th>
+        <th>Reason</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let match of result.matches">
+        <td>{{ match.persona_name }}</td>
+        <td>{{ (match.score * 100) | number: '1.0-0' }}%</td>
+        <td>{{ match.reason || '-' }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>

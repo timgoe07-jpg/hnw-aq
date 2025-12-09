@@ -1,0 +1,209 @@
+.header {
+  margin-bottom: 0.5rem;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.form-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.5rem;
+}
+
+.result-card {
+  margin-top: 0.75rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.result-row {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  margin: 0.5rem 0;
+}
+
+.label {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.value {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.chip {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  text-transform: capitalize;
+}
+.chip.high {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+.chip.medium {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+.chip.low {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.ai-card .full-width {
+  width: 100%;
+}
+
+.ai-card .ai-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.explain-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5f5;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+
+.explain-btn:hover {
+  background: rgba(16, 185, 129, 0.18);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.explain-text {
+  margin: 0.35rem 0 0.25rem;
+}
+
+.ai-answer {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  white-space: pre-wrap;
+}
+
+.horizon-table {
+  width: 100%;
+  margin-top: 0.5rem;
+  border-collapse: collapse;
+}
+.horizon-table th,
+.horizon-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.35rem;
+  text-align: left;
+}
+.horizon-table.compact th,
+.horizon-table.compact td {
+  padding: 0.25rem 0.35rem;
+  font-size: 0.9rem;
+}
+
+.model-compare {
+  margin-top: 0.5rem;
+}
+
+.scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.scenario-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.scenario-result {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  background: var(--surface-2);
+}
+
+.scenario-column .value {
+  font-size: 1.3rem;
+}
+
+.delta {
+  margin-top: 0.25rem;
+  font-weight: 600;
+  color: #16a34a;
+}
+.delta.worse {
+  color: #ef4444;
+}
+
+.horizon-table + canvas {
+  margin-top: 0.5rem;
+}
+
+.metrics-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.metric-chart {
+  height: 260px;
+  max-height: 260px;
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.what-if-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.what-if-panel {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem 0.9rem;
+}
+
+.what-if-chart {
+  display: block;
+  height: 260px;
+  max-height: 260px;
+}

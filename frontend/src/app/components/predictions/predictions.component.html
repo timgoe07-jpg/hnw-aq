@@ -1,0 +1,550 @@
+<div class="header">
+  <div>
+    <div class="page-title">On-demand Predictions</div>
+    <div class="muted">Test scenarios for investors and loans.</div>
+  </div>
+</div>
+
+<div class="grid">
+  <mat-card class="form-card">
+    <mat-card-title>Investor Churn Prediction</mat-card-title>
+    <form [formGroup]="investorForm" (ngSubmit)="submitInvestor()">
+      <div class="two-col">
+        <mat-form-field appearance="fill">
+          <mat-label>Age</mat-label>
+          <input matInput type="number" formControlName="age" />
+        </mat-form-field>
+        <mat-form-field appearance="fill">
+          <mat-label>AUM (USD)</mat-label>
+          <input matInput type="number" formControlName="aum" />
+        </mat-form-field>
+      </div>
+
+      <div class="two-col">
+        <mat-form-field appearance="fill">
+          <mat-label>Risk tolerance</mat-label>
+          <mat-select formControlName="risk_tolerance">
+            <mat-option *ngFor="let r of riskOptions" [value]="r">{{ r | titlecase }}</mat-option>
+          </mat-select>
+        </mat-form-field>
+        <mat-form-field appearance="fill">
+          <mat-label>Engagement score (0-100)</mat-label>
+          <input matInput type="number" formControlName="engagement_score" />
+        </mat-form-field>
+      </div>
+
+      <div class="two-col">
+        <mat-form-field appearance="fill">
+          <mat-label>Email open rate (0-1)</mat-label>
+          <input matInput type="number" step="0.01" formControlName="email_open_rate" />
+        </mat-form-field>
+        <mat-form-field appearance="fill">
+          <mat-label>Calls per quarter</mat-label>
+          <input matInput type="number" step="0.1" formControlName="call_frequency" />
+        </mat-form-field>
+      </div>
+
+      <div class="two-col">
+        <mat-form-field appearance="fill">
+          <mat-label>Inactivity days</mat-label>
+          <input matInput type="number" formControlName="inactivity_days" />
+        </mat-form-field>
+        <mat-form-field appearance="fill">
+          <mat-label>Distribution yield (0-1)</mat-label>
+          <input matInput type="number" step="0.001" formControlName="distribution_yield" />
+        </mat-form-field>
+      </div>
+
+      <div class="two-col">
+        <mat-form-field appearance="fill">
+          <mat-label>Meetings last quarter</mat-label>
+          <input matInput type="number" formControlName="meetings_last_quarter" />
+        </mat-form-field>
+        <mat-form-field appearance="fill">
+          <mat-label>Redemption intent</mat-label>
+          <mat-select formControlName="redemption_intent">
+            <mat-option [value]="false">No</mat-option>
+            <mat-option [value]="true">Yes</mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <button mat-flat-button color="primary" type="submit" [disabled]="loadingInvestor">
+        {{ loadingInvestor ? "Predicting..." : "Predict churn" }}
+      </button>
+    </form>
+
+    <mat-card *ngIf="investorResult" class="result-card" color="accent">
+      <mat-card-subtitle>Result</mat-card-subtitle>
+      <div class="result-row">
+        <div>
+          <div class="label">Probability</div>
+          <div class="value">{{ formatPercent(investorResult?.churn_probability) }}</div>
+        </div>
+        <div>
+          <div class="label">Bucket</div>
+          <div class="chip" [ngClass]="investorResult?.risk_bucket?.toLowerCase()">{{ investorResult?.risk_bucket }}</div>
+        </div>
+      </div>
+      <p>{{ investorResult?.explanation }}</p>
+      <table class="horizon-table" *ngIf="investorHorizonRows.length">
+        <thead><tr><th>Horizon</th><th>Probability</th><th>Bucket</th></tr></thead>
+        <tbody>
+          <tr *ngFor="let h of investorHorizonRows">
+            <td>{{ h.horizon }}</td>
+            <td>{{ formatPercent(h.probability) }}</td>
+            <td>{{ h.bucket }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="model-compare" *ngIf="investorModelRows.length">
+        <div class="label">Model families (6m)</div>
+        <table class="horizon-table compact">
+          <thead><tr><th>Family</th><th>Probability</th><th>Bucket</th></tr></thead>
+          <tbody>
+            <tr *ngFor="let row of investorModelRows">
+              <td>{{ row.family }}</td>
+              <td>{{ formatPercent(row.probability) }}</td>
+              <td>{{ row.bucket }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="muted small" *ngIf="investorLocalKn">
+        Local k-NN (k={{ investorLocalKn?.k || 20 }}): {{ formatPercent(investorLocalKn?.probability) }}
+        <span *ngIf="investorLocalKn?.bucket">({{ investorLocalKn?.bucket }})</span>
+      </div>
+      <div class="muted small" *ngIf="investorNeighbors?.length">
+        Nearest neighbours:
+        <table class="horizon-table compact">
+          <tr><th>ID</th><th>Label</th><th>Dist</th><th>Eng</th><th>Inactivity</th></tr>
+          <tr *ngFor="let n of investorNeighbors | slice:0:5">
+            <td>{{ n.id }}</td>
+            <td>{{ n.label }}</td>
+            <td>{{ n.distance | number:'1.2-2' }}</td>
+            <td>{{ n.engagement_score | number:'1.0-0' }}</td>
+            <td>{{ n.inactivity_days }}</td>
+          </tr>
+        </table>
+      </div>
+      <div class="muted small" *ngIf="investorDrivers?.length">
+        Top drivers vs portfolio median:
+        <table class="horizon-table compact">
+          <tr><th>Feature</th><th>Value</th><th>Median</th><th>Δ%</th></tr>
+          <tr *ngFor="let d of investorDrivers">
+            <td>{{ d.feature }}</td>
+            <td>{{ d.value | number:'1.2-2' }}</td>
+            <td>{{ d.portfolio_median | number:'1.2-2' }}</td>
+            <td>{{ (d.delta_pct * 100) | number:'1.1-1' }}%</td>
+          </tr>
+        </table>
+        <div class="muted small">Contribution (Δ% vs median)</div>
+        <canvas baseChart [data]="investorDriverChart" [options]="{ indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#9bb0c9' } }, y: { ticks: { color: '#9bb0c9' } } } }" [type]="'bar'"></canvas>
+        <div class="muted small" *ngIf="investorContribChart?.labels?.length">
+          SHAP-lite (logistic contributions):
+          <canvas baseChart [data]="investorContribChart" [options]="{ indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#9bb0c9' } }, y: { ticks: { color: '#9bb0c9' } } } }" [type]="'bar'"></canvas>
+        </div>
+      </div>
+    </mat-card>
+  </mat-card>
+
+  <mat-card class="form-card">
+    <mat-card-title>Loan Default Prediction</mat-card-title>
+    <form [formGroup]="loanForm" (ngSubmit)="submitLoan()">
+      <div class="two-col">
+        <mat-form-field appearance="fill">
+          <mat-label>Amount (USD)</mat-label>
+          <input matInput type="number" formControlName="amount" />
+        </mat-form-field>
+        <mat-form-field appearance="fill">
+          <mat-label>LTV ratio (0-1)</mat-label>
+          <input matInput type="number" step="0.01" formControlName="ltv_ratio" />
+        </mat-form-field>
+      </div>
+
+      <div class="two-col">
+        <mat-form-field appearance="fill">
+          <mat-label>Term (months)</mat-label>
+          <input matInput type="number" formControlName="term_months" />
+        </mat-form-field>
+        <mat-form-field appearance="fill">
+          <mat-label>Sector</mat-label>
+          <mat-select formControlName="sector">
+            <mat-option *ngFor="let s of sectorOptions" [value]="s">{{ s | titlecase }}</mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <mat-form-field appearance="fill">
+        <mat-label>Arrears flag</mat-label>
+        <mat-select formControlName="arrears_flag">
+          <mat-option [value]="false">No</mat-option>
+          <mat-option [value]="true">Yes</mat-option>
+        </mat-select>
+      </mat-form-field>
+
+      <div class="two-col">
+        <mat-form-field appearance="fill">
+          <mat-label>DSCR</mat-label>
+          <input matInput type="number" step="0.01" formControlName="dscr" />
+        </mat-form-field>
+        <mat-form-field appearance="fill">
+          <mat-label>Collateral score (0-1)</mat-label>
+          <input matInput type="number" step="0.01" formControlName="collateral_score" />
+        </mat-form-field>
+      </div>
+
+      <mat-form-field appearance="fill">
+        <mat-label>Covenants breached</mat-label>
+        <mat-select formControlName="covenants_flag">
+          <mat-option [value]="false">No</mat-option>
+          <mat-option [value]="true">Yes</mat-option>
+        </mat-select>
+      </mat-form-field>
+
+      <button mat-flat-button color="primary" type="submit" [disabled]="loadingLoan">
+        {{ loadingLoan ? "Predicting..." : "Predict default" }}
+      </button>
+    </form>
+
+    <mat-card *ngIf="loanResult" class="result-card">
+      <mat-card-subtitle>Result</mat-card-subtitle>
+      <div class="result-row">
+        <div>
+          <div class="label">Probability</div>
+          <div class="value">{{ formatPercent(loanResult?.default_probability) }}</div>
+        </div>
+        <div>
+          <div class="label">Bucket</div>
+          <div class="chip" [ngClass]="loanResult?.risk_bucket?.toLowerCase()">{{ loanResult?.risk_bucket }}</div>
+        </div>
+      </div>
+      <p>{{ loanResult?.explanation }}</p>
+      <table class="horizon-table" *ngIf="loanHorizonRows.length">
+        <thead><tr><th>Horizon</th><th>Probability</th><th>Bucket</th></tr></thead>
+        <tbody>
+          <tr *ngFor="let h of loanHorizonRows">
+            <td>{{ h.horizon }}</td>
+            <td>{{ formatPercent(h.probability) }}</td>
+            <td>{{ h.bucket }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="model-compare" *ngIf="loanModelRows.length">
+        <div class="label">Model families (6m)</div>
+        <table class="horizon-table compact">
+          <thead><tr><th>Family</th><th>Probability</th><th>Bucket</th></tr></thead>
+          <tbody>
+            <tr *ngFor="let row of loanModelRows">
+              <td>{{ row.family }}</td>
+              <td>{{ formatPercent(row.probability) }}</td>
+              <td>{{ row.bucket }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="muted small" *ngIf="loanLocalKn">
+        Local k-NN (k={{ loanLocalKn?.k || 20 }}): {{ formatPercent(loanLocalKn?.probability) }}
+        <span *ngIf="loanLocalKn?.bucket">({{ loanLocalKn?.bucket }})</span>
+      </div>
+      <div class="muted small" *ngIf="loanNeighbors?.length">
+        Nearest neighbours:
+        <table class="horizon-table compact">
+          <tr><th>ID</th><th>Label</th><th>Dist</th><th>Sector</th><th>LTV</th><th>DSCR</th></tr>
+          <tr *ngFor="let n of loanNeighbors | slice:0:5">
+            <td>{{ n.id }}</td>
+            <td>{{ n.label }}</td>
+            <td>{{ n.distance | number:'1.2-2' }}</td>
+            <td>{{ n.sector }}</td>
+            <td>{{ n.ltv_ratio | number:'1.2-2' }}</td>
+            <td>{{ n.dscr | number:'1.2-2' }}</td>
+          </tr>
+        </table>
+      </div>
+      <div class="muted small" *ngIf="loanDrivers?.length">
+        Top drivers vs portfolio median:
+        <table class="horizon-table compact">
+          <tr><th>Feature</th><th>Value</th><th>Median</th><th>Δ%</th></tr>
+          <tr *ngFor="let d of loanDrivers">
+            <td>{{ d.feature }}</td>
+            <td>{{ d.value | number:'1.2-2' }}</td>
+            <td>{{ d.portfolio_median | number:'1.2-2' }}</td>
+            <td>{{ (d.delta_pct * 100) | number:'1.1-1' }}%</td>
+          </tr>
+        </table>
+        <div class="muted small">Contribution (Δ% vs median)</div>
+        <canvas baseChart [data]="loanDriverChart" [options]="{ indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#9bb0c9' } }, y: { ticks: { color: '#9bb0c9' } } } }" [type]="'bar'"></canvas>
+        <div class="muted small" *ngIf="loanContribChart?.labels?.length">
+          SHAP-lite (logistic contributions):
+          <canvas baseChart [data]="loanContribChart" [options]="{ indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#9bb0c9' } }, y: { ticks: { color: '#9bb0c9' } } } }" [type]="'bar'"></canvas>
+        </div>
+      </div>
+    </mat-card>
+  </mat-card>
+</div>
+
+<div class="scenario-grid">
+  <mat-card class="form-card scenario-card">
+    <mat-card-title>Investor what-if simulator</mat-card-title>
+    <div *ngIf="sampleInvestors.length; else noInvestorSamples">
+      <form [formGroup]="investorScenarioForm" (ngSubmit)="runInvestorScenario()">
+        <div class="two-col">
+          <mat-form-field appearance="fill">
+            <mat-label>Select investor</mat-label>
+            <mat-select formControlName="entity_id" (selectionChange)="onInvestorSelect($event.value)">
+              <mat-option *ngFor="let inv of sampleInvestors" [value]="inv.id">
+                {{ inv.name || ('Investor ' + inv.id) }} – {{ inv.risk_tolerance | titlecase }}, AUM {{ inv.aum | number:'1.0-0' }}
+              </mat-option>
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field appearance="fill">
+            <mat-label>Horizon</mat-label>
+            <mat-select formControlName="horizon">
+              <mat-option *ngFor="let h of scenarioHorizonOptions" [value]="h">{{ h }}</mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+        <div class="two-col">
+          <mat-form-field appearance="fill">
+            <mat-label>Engagement score</mat-label>
+            <input matInput type="number" formControlName="engagement_score" />
+          </mat-form-field>
+          <mat-form-field appearance="fill">
+            <mat-label>Inactivity days</mat-label>
+            <input matInput type="number" formControlName="inactivity_days" />
+          </mat-form-field>
+        </div>
+        <mat-form-field appearance="fill">
+          <mat-label>Call frequency (per quarter)</mat-label>
+          <input matInput type="number" step="0.1" formControlName="call_frequency" />
+        </mat-form-field>
+        <button mat-stroked-button color="primary" type="submit">Run scenario</button>
+      </form>
+
+      <div class="scenario-result" *ngIf="scenarioInvestorResult">
+        <div class="scenario-column">
+          <div class="muted">Base {{ scenarioInvestorResult.horizon }}</div>
+          <div class="value">{{ formatPercent(scenarioInvestorResult.base?.probability) }}</div>
+          <div class="chip" [ngClass]="scenarioInvestorResult.base?.bucket?.toLowerCase()">{{ scenarioInvestorResult.base?.bucket }}</div>
+        </div>
+        <div class="scenario-column">
+          <div class="muted">Scenario</div>
+          <div class="value">{{ formatPercent(scenarioInvestorResult.scenario?.probability) }}</div>
+          <div class="chip" [ngClass]="scenarioInvestorResult.scenario?.bucket?.toLowerCase()">{{ scenarioInvestorResult.scenario?.bucket }}</div>
+          <div class="delta" [ngClass]="{'worse': (scenarioInvestorResult.scenario?.probability||0) > (scenarioInvestorResult.base?.probability||0)}">
+            Δ {{ deltaLabel(scenarioInvestorResult.base?.probability, scenarioInvestorResult.scenario?.probability) }}
+          </div>
+        </div>
+      </div>
+    </div>
+    <ng-template #noInvestorSamples>
+      <div class="muted">Loading synthetic investors...</div>
+    </ng-template>
+  </mat-card>
+
+  <mat-card class="form-card scenario-card">
+    <mat-card-title>Loan what-if simulator</mat-card-title>
+    <div *ngIf="sampleLoans.length; else noLoanSamples">
+      <form [formGroup]="loanScenarioForm" (ngSubmit)="runLoanScenario()">
+        <div class="two-col">
+          <mat-form-field appearance="fill">
+            <mat-label>Select loan</mat-label>
+            <mat-select formControlName="entity_id" (selectionChange)="onLoanSelect($event.value)">
+              <mat-option *ngFor="let loan of sampleLoans" [value]="loan.id">
+                Loan #{{ loan.id }} – {{ loan.sector | titlecase }} – ${{ loan.amount | number:'1.0-0' }}
+              </mat-option>
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field appearance="fill">
+            <mat-label>Horizon</mat-label>
+            <mat-select formControlName="horizon">
+              <mat-option *ngFor="let h of scenarioHorizonOptions" [value]="h">{{ h }}</mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+        <div class="two-col">
+          <mat-form-field appearance="fill">
+            <mat-label>LTV ratio</mat-label>
+            <input matInput type="number" step="0.01" formControlName="ltv_ratio" />
+          </mat-form-field>
+          <mat-form-field appearance="fill">
+            <mat-label>DSCR</mat-label>
+            <input matInput type="number" step="0.01" formControlName="dscr" />
+          </mat-form-field>
+        </div>
+        <mat-form-field appearance="fill">
+          <mat-label>Term (months)</mat-label>
+          <input matInput type="number" formControlName="term_months" />
+        </mat-form-field>
+        <button mat-stroked-button color="primary" type="submit">Run scenario</button>
+      </form>
+
+      <div class="scenario-result" *ngIf="scenarioLoanResult">
+        <div class="scenario-column">
+          <div class="muted">Base {{ scenarioLoanResult.horizon }}</div>
+          <div class="value">{{ formatPercent(scenarioLoanResult.base?.probability) }}</div>
+          <div class="chip" [ngClass]="scenarioLoanResult.base?.bucket?.toLowerCase()">{{ scenarioLoanResult.base?.bucket }}</div>
+        </div>
+        <div class="scenario-column">
+          <div class="muted">Scenario</div>
+          <div class="value">{{ formatPercent(scenarioLoanResult.scenario?.probability) }}</div>
+          <div class="chip" [ngClass]="scenarioLoanResult.scenario?.bucket?.toLowerCase()">{{ scenarioLoanResult.scenario?.bucket }}</div>
+          <div class="delta" [ngClass]="{'worse': (scenarioLoanResult.scenario?.probability||0) > (scenarioLoanResult.base?.probability||0)}">
+            Δ {{ deltaLabel(scenarioLoanResult.base?.probability, scenarioLoanResult.scenario?.probability) }}
+          </div>
+        </div>
+      </div>
+    </div>
+    <ng-template #noLoanSamples>
+      <div class="muted">Loading synthetic loans...</div>
+    </ng-template>
+  </mat-card>
+</div>
+
+  <mat-card class="form-card scenario-card" *ngIf="whatIfCurves?.churn || whatIfCurves?.default">
+    <div class="title-row">
+      <mat-card-title>Polynomial What-if (contour-lite)</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('whatIf', explainPrompts.whatIf, {whatIf: whatIfCurves})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.whatIf?.text">
+      <span *ngIf="cardExplain.whatIf.loading">Loading…</span>
+      <span *ngIf="!cardExplain.whatIf.loading">{{ cardExplain.whatIf.text }}</span>
+    </div>
+    <div class="muted small">Adjust sliders to see position on fitted non-linear curves.</div>
+    <div class="what-if-grid">
+      <div class="what-if-panel">
+        <div class="muted small">Engagement score (churn)</div>
+        <mat-slider min="0" max="100" step="1" tickInterval="10">
+          <input matSliderThumb [value]="whatIfChurn" (valueChange)="onWhatIfChurnChange($event)" />
+        </mat-slider>
+        <canvas class="what-if-chart" *ngIf="whatIfCurves.churn" baseChart [data]="whatIfCurves.churn" [options]="lineOptions" [type]="'line'"></canvas>
+      </div>
+      <div class="what-if-panel">
+        <div class="muted small">LTV ratio (default)</div>
+        <mat-slider min="0.2" max="1" step="0.01" tickInterval="0.1">
+          <input matSliderThumb [value]="whatIfDefault" (valueChange)="onWhatIfDefaultChange($event)" />
+        </mat-slider>
+        <canvas class="what-if-chart" *ngIf="whatIfCurves.default" baseChart [data]="whatIfCurves.default" [options]="lineOptions" [type]="'line'"></canvas>
+      </div>
+    </div>
+  </mat-card>
+
+<mat-card class="form-card scenario-card" *ngIf="surfaceCurves?.churn || surfaceCurves?.default">
+  <div class="title-row">
+    <mat-card-title>2D Scenario Surfaces</mat-card-title>
+    <button class="explain-btn" (click)="explainCard('surfaces', explainPrompts.surfaces, {surfaces: surfaceCurves})">Explain</button>
+  </div>
+  <div class="muted small explain-text" *ngIf="cardExplain.surfaces?.text">
+    <span *ngIf="cardExplain.surfaces.loading">Loading…</span>
+    <span *ngIf="!cardExplain.surfaces.loading">{{ cardExplain.surfaces.text }}</span>
+  </div>
+  <div class="muted small">Line slices from model surfaces (other axis fixed per line label).</div>
+  <div class="two-col">
+    <div *ngIf="surfaceCurves.churn">
+      <div class="muted small">Churn surface (engagement vs inactivity)</div>
+      <canvas baseChart [data]="surfaceCurves.churn" [options]="lineOptions" [type]="'line'"></canvas>
+    </div>
+    <div *ngIf="surfaceCurves.default">
+      <div class="muted small">Default surface (LTV vs DSCR)</div>
+      <canvas baseChart [data]="surfaceCurves.default" [options]="lineOptions" [type]="'line'"></canvas>
+    </div>
+  </div>
+</mat-card>
+
+<mat-card class="form-card threshold-card">
+  <div class="threshold-header">
+    <div class="title-row">
+      <mat-card-title>Threshold tuning</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('threshold', explainPrompts.threshold, {thresholdGrid, thresholdMeta})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.threshold?.text">
+      <span *ngIf="cardExplain.threshold.loading">Loading…</span>
+      <span *ngIf="!cardExplain.threshold.loading">{{ cardExplain.threshold.text }}</span>
+    </div>
+    <div class="threshold-selects">
+      <mat-form-field appearance="fill">
+        <mat-label>Problem</mat-label>
+        <mat-select [(ngModel)]="thresholdMeta.problem" (selectionChange)="onThresholdMetaChange()">
+          <mat-option *ngFor="let p of thresholdProblems" [value]="p">{{ p | titlecase }}</mat-option>
+        </mat-select>
+      </mat-form-field>
+      <mat-form-field appearance="fill">
+        <mat-label>Horizon</mat-label>
+        <mat-select [(ngModel)]="thresholdMeta.horizon" (selectionChange)="onThresholdMetaChange()">
+          <mat-option *ngFor="let h of thresholdHorizons" [value]="h">{{ h }}</mat-option>
+        </mat-select>
+      </mat-form-field>
+      <mat-form-field appearance="fill">
+        <mat-label>Model</mat-label>
+        <mat-select [(ngModel)]="thresholdMeta.family" (selectionChange)="onThresholdMetaChange()">
+          <mat-option *ngFor="let f of thresholdFamilies" [value]="f">{{ f | titlecase }}</mat-option>
+        </mat-select>
+      </mat-form-field>
+    </div>
+  </div>
+  <div class="slider-row" *ngIf="thresholdGrid.length; else noThresholds">
+    <mat-slider min="0.05" max="0.95" step="0.01" [displayWith]="formatPercent" tickInterval="0.1">
+      <input matSliderThumb [value]="selectedThreshold" (valueChange)="onThresholdChange($event)" />
+    </mat-slider>
+    <div class="threshold-summary" *ngIf="thresholdSummary">
+      <div><span class="label">Threshold</span> {{ selectedThreshold | number:'1.2-2' }}</div>
+      <div><span class="label">Precision</span> {{ formatPercent(thresholdSummary?.precision) }}</div>
+      <div><span class="label">Recall</span> {{ formatPercent(thresholdSummary?.recall) }}</div>
+      <div><span class="label">TPR</span> {{ formatPercent(thresholdSummary?.tpr) }}</div>
+      <div><span class="label">FPR</span> {{ formatPercent(thresholdSummary?.fpr) }}</div>
+      <div><span class="label">Triggered</span> {{ formatPercent(thresholdSummary?.positive_rate) }}</div>
+    </div>
+  </div>
+  <ng-template #noThresholds>
+    <div class="muted">No threshold grid available for this selection.</div>
+  </ng-template>
+</mat-card>
+
+<div class="metrics-grid" *ngIf="metrics">
+  <mat-card>
+    <mat-card-title>Churn Feature Importance</mat-card-title>
+    <canvas class="metric-chart" baseChart [data]="churnImportanceData" [options]="chartOptions" [type]="'bar'"></canvas>
+  </mat-card>
+  <mat-card>
+    <mat-card-title>Default Feature Importance</mat-card-title>
+    <canvas class="metric-chart" baseChart [data]="defaultImportanceData" [options]="chartOptions" [type]="'bar'"></canvas>
+  </mat-card>
+  <mat-card>
+    <mat-card-title>Churn Calibration</mat-card-title>
+    <canvas class="metric-chart" baseChart [data]="churnCalibrationData" [options]="{ responsive: true, plugins: { legend: { labels: { color: '#9bb0c9' } } }, scales: { x: { ticks: { color: '#9bb0c9' } }, y: { ticks: { color: '#9bb0c9' }, beginAtZero: true } } }" [type]="'line'"></canvas>
+  </mat-card>
+  <mat-card>
+    <mat-card-title>Default Calibration</mat-card-title>
+    <canvas class="metric-chart" baseChart [data]="defaultCalibrationData" [options]="{ responsive: true, plugins: { legend: { labels: { color: '#9bb0c9' } } }, scales: { x: { ticks: { color: '#9bb0c9' } }, y: { ticks: { color: '#9bb0c9' }, beginAtZero: true } } }" [type]="'line'"></canvas>
+  </mat-card>
+  <mat-card *ngIf="baselineCI">
+    <mat-card-title>Uncertainty (bootstrap CI)</mat-card-title>
+    <div class="muted small" *ngIf="baselineCI.churn?.auc">
+      Churn AUC: {{ baselineCI.churn.auc.mean | number:'1.2-2' }} [{{ baselineCI.churn.auc.ci[0] | number:'1.2-2' }} – {{ baselineCI.churn.auc.ci[1] | number:'1.2-2' }}]
+    </div>
+    <div class="muted small" *ngIf="baselineCI.default?.auc">
+      Default AUC: {{ baselineCI.default.auc.mean | number:'1.2-2' }} [{{ baselineCI.default.auc.ci[0] | number:'1.2-2' }} – {{ baselineCI.default.auc.ci[1] | number:'1.2-2' }}]
+    </div>
+  </mat-card>
+</div>
+
+<mat-card class="ai-card">
+  <div class="ai-header">
+    <mat-card-title>Explain with AI</mat-card-title>
+    <button mat-stroked-button color="accent" (click)="aiOpen = !aiOpen">
+      {{ aiOpen ? 'Minimize' : 'Open' }}
+    </button>
+  </div>
+  <div *ngIf="aiOpen">
+    <mat-form-field appearance="fill" class="full-width">
+      <mat-label>Ask about these predictions</mat-label>
+      <textarea matInput rows="3" [(ngModel)]="aiQuestion" placeholder="e.g., Which factors drive these results?"></textarea>
+    </mat-form-field>
+    <button mat-flat-button color="primary" (click)="askAi()" [disabled]="aiLoading || !aiQuestion">
+      {{ aiLoading ? "Thinking..." : "Ask AI" }}
+    </button>
+    <div class="ai-answer" *ngIf="aiAnswer">
+      {{ aiAnswer }}
+    </div>
+  </div>
+</mat-card>

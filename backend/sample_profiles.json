@@ -1,0 +1,40 @@
+{
+  "profiles": [
+    {
+      "full_name": "Mary Thompson",
+      "headline": "Retired CFO looking for reliable income",
+      "current_title": "Retired",
+      "current_company": "Formerly ABC Limited",
+      "location": "Sydney",
+      "industry": "Finance",
+      "about_summary": "Self-funded retiree with a paid-off home and $2m seeking dependable yield.",
+      "profile_url": "https://www.linkedin.com/in/mary-thompson-retiree",
+      "experience": [
+        { "title": "Chief Financial Officer", "company": "ABC Limited", "description": "Managed treasury and liquidity." }
+      ]
+    },
+    {
+      "full_name": "James Wong",
+      "headline": "Founder and angel investor",
+      "current_title": "Founder",
+      "current_company": "Growth Labs",
+      "location": "Melbourne",
+      "industry": "Technology",
+      "about_summary": "Sold a software company and now diversifying beyond property and equities.",
+      "profile_url": "https://www.linkedin.com/in/james-wong-founder",
+      "experience": [
+        { "title": "CEO", "company": "Growth Labs", "description": "Built and exited a SaaS company." }
+      ]
+    },
+    {
+      "full_name": "Emerald Sports Club",
+      "headline": "Community club treasurer",
+      "current_title": "Treasurer",
+      "current_company": "Emerald Sports Club",
+      "location": "Brisbane",
+      "industry": "Not-for-profit",
+      "about_summary": "Manages $8m reserves earmarked for clubhouse redevelopment; wants secure yield until deployment.",
+      "profile_url": "https://www.linkedin.com/company/emerald-sports-club"
+    }
+  ]
+}

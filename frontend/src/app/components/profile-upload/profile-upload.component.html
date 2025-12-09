@@ -1,0 +1,46 @@
+<div class="header">
+  <div>
+    <div class="page-title">LinkedIn Matching</div>
+    <div class="muted">Upload profiles or auto-search via LinkedIn API (synthetic-friendly).</div>
+  </div>
+</div>
+
+<div class="grid">
+  <mat-card>
+    <mat-card-title>Match uploaded profiles to personas</mat-card-title>
+    <mat-card-content>
+      <p class="muted">Paste a JSON array of LinkedIn-like profiles.</p>
+      <textarea [(ngModel)]="jsonInput" rows="8"></textarea>
+      <button mat-flat-button color="primary" (click)="submitJson()" [disabled]="loading">
+        {{ loading ? "Matching..." : "Run match" }}
+      </button>
+    </mat-card-content>
+  </mat-card>
+
+  <mat-card>
+    <mat-card-title>Automated LinkedIn suggestions</mat-card-title>
+    <mat-card-content>
+      <mat-form-field appearance="fill">
+        <mat-label>Keywords</mat-label>
+        <input matInput [(ngModel)]="autoKeyword" />
+      </mat-form-field>
+      <mat-form-field appearance="fill">
+        <mat-label>Location</mat-label>
+        <input matInput [(ngModel)]="autoLocation" />
+      </mat-form-field>
+      <button mat-stroked-button color="accent" (click)="runAutoSearch()" [disabled]="autoLoading">
+        {{ autoLoading ? "Searching..." : "Search & rank" }}
+      </button>
+    </mat-card-content>
+  </mat-card>
+</div>
+
+<div class="section">
+  <h3>Uploaded profile matches</h3>
+  <app-match-results [results]="results"></app-match-results>
+</div>
+
+<div class="section">
+  <h3>Automated LinkedIn matches</h3>
+  <app-match-results [results]="autoResults"></app-match-results>
+</div>

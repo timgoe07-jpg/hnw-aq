@@ -1,0 +1,1630 @@
+<div class="actions">
+  <div>
+    <div class="page-title">Risk & Engagement Dashboard</div>
+    <div class="muted">Real-time snapshot of churn and default risk.</div>
+  </div>
+  <mat-button-toggle-group [value]="selectedHorizon" (change)="changeHorizon($event.value)" class="horizon-toggle">
+    <mat-button-toggle value="3m">3m</mat-button-toggle>
+    <mat-button-toggle value="6m">6m</mat-button-toggle>
+    <mat-button-toggle value="12m">12m</mat-button-toggle>
+  </mat-button-toggle-group>
+  <div class="action-buttons">
+    <button mat-flat-button color="primary" (click)="refreshReport()" [disabled]="loading">Generate Report</button>
+    <button mat-stroked-button color="accent" (click)="loadData()" [disabled]="loading">
+      Refresh Data
+    </button>
+  </div>
+</div>
+<div class="timestamp" *ngIf="report">Generated {{ report?.generated_at | date: 'short' }}</div>
+
+<div class="loading" *ngIf="loading">
+  <mat-progress-spinner mode="indeterminate" diameter="40"></mat-progress-spinner>
+</div>
+
+<div class="grid" *ngIf="!loading">
+  <mat-card class="summary-card">
+    <div class="title-row">
+      <mat-card-title>Model Comparison</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('modelComparison', explainPrompts.modelComparison, {metrics: familyMetrics(), horizon: selectedHorizon})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.modelComparison?.text">
+      <span *ngIf="cardExplain.modelComparison.loading">Loading…</span>
+      <span *ngIf="!cardExplain.modelComparison.loading">{{ cardExplain.modelComparison.text }}</span>
+    </div>
+    <div class="model-select">
+      <mat-form-field appearance="fill">
+        <mat-label>Model family</mat-label>
+        <mat-select [value]="selectedFamily" (selectionChange)="changeFamily($event.value)">
+          <mat-option *ngFor="let fam of modelFamilies" [value]="fam.id">{{ fam.label }}</mat-option>
+        </mat-select>
+      </mat-form-field>
+      <div class="muted">Horizon: {{ selectedHorizon }}</div>
+      <button mat-stroked-button color="accent" (click)="explainDashboard()">Explain dashboard</button>
+    </div>
+    <div class="metric-row" *ngIf="familyMetrics().churn">
+      <div>
+        <div class="muted">Churn</div>
+        <div class="metric-value">AUC {{ (familyMetrics().churn?.roc_auc || 0) | number: '1.2-2' }}</div>
+        <div class="muted small">Acc {{ (familyMetrics().churn?.accuracy || 0) | number: '1.2-2' }} |
+          Prec {{ (familyMetrics().churn?.precision || 0) | number: '1.2-2' }} |
+          Rec {{ (familyMetrics().churn?.recall || 0) | number: '1.2-2' }}</div>
+      </div>
+      <div>
+        <div class="muted">Default</div>
+        <div class="metric-value">AUC {{ (familyMetrics().default?.roc_auc || 0) | number: '1.2-2' }}</div>
+        <div class="muted small">Acc {{ (familyMetrics().default?.accuracy || 0) | number: '1.2-2' }} |
+          Prec {{ (familyMetrics().default?.precision || 0) | number: '1.2-2' }} |
+          Rec {{ (familyMetrics().default?.recall || 0) | number: '1.2-2' }}</div>
+      </div>
+    </div>
+    <div class="muted" *ngIf="!familyMetrics().churn">Metrics loading…</div>
+  </mat-card>
+
+  <mat-card class="summary-card col-span-6">
+    <div class="title-row">
+      <mat-card-title>Model Diagnostics Radar</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('radar', explainPrompts.radar, {metrics: modelMetrics, horizon: selectedHorizon, family: selectedFamily})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.radar?.text">
+      <span *ngIf="cardExplain.radar.loading">Loading…</span>
+      <span *ngIf="!cardExplain.radar.loading">{{ cardExplain.radar.text }}</span>
+    </div>
+    <div class="muted small">Metrics for {{ selectedFamily }} &#64; {{ selectedHorizon }}</div>
+    <canvas baseChart [data]="radarData" [type]="'radar'" [options]="{ responsive: true, plugins: { legend: { labels: { color: '#9bb0c9' } } }, scales: { r: { beginAtZero: true, min:0, max:1 } } }"></canvas>
+  </mat-card>
+
+  <mat-card class="summary-card">
+    <div class="title-row">
+      <mat-card-title>Model Bucket Distributions</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('buckets', explainPrompts.buckets, {buckets: bucketData})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.buckets?.text">
+      <span *ngIf="cardExplain.buckets.loading">Loading…</span>
+      <span *ngIf="!cardExplain.buckets.loading">{{ cardExplain.buckets.text }}</span>
+    </div>
+    <div class="muted small">From training labels for {{ selectedFamily }} &#64; {{ selectedHorizon }}</div>
+    <canvas baseChart [data]="bucketData" [options]="chartOptions" [type]="'bar'"></canvas>
+  </mat-card>
+
+  <mat-card class="summary-card" *ngIf="alerts">
+    <div class="title-row">
+      <mat-card-title>Risk Cockpit (SLA)</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('riskCockpit', explainPrompts.riskCockpit, {alerts})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.riskCockpit?.text">
+      <span *ngIf="cardExplain.riskCockpit.loading">Loading…</span>
+      <span *ngIf="!cardExplain.riskCockpit.loading">{{ cardExplain.riskCockpit.text }}</span>
+    </div>
+    <div class="muted small">
+      Active: {{ alerts?.summary?.investors_active || 0 }} investors / {{ alerts?.summary?.loans_active || 0 }} loans |
+      Breaches (&gt;{{ slaThreshold }}d): {{ alerts?.summary?.investor_breach || 0 }} / {{ alerts?.summary?.loan_breach || 0 }}
+    </div>
+    <div class="alert-flex">
+      <div class="muted small">Investors</div>
+      <table class="data-table small-table" *ngIf="alerts?.investors?.length; else noInvAlerts">
+        <tr><th>Name</th><th>P(6m)</th><th>Days</th><th>SLA</th></tr>
+        <tr *ngFor="let a of alerts.investors | slice:0:5">
+          <td>{{ a.name }}</td>
+          <td>{{ formatPercent(a.probability) }}</td>
+          <td>{{ a.days_open }}</td>
+          <td><span class="chip" [ngClass]="a.sla_breach ? 'high' : 'medium'">{{ a.sla_breach ? 'Breach' : 'OK' }}</span></td>
+        </tr>
+      </table>
+      <ng-template #noInvAlerts><div class="muted small">No active investor alerts.</div></ng-template>
+    </div>
+    <div class="alert-flex">
+      <div class="muted small">Loans</div>
+      <table class="data-table small-table" *ngIf="alerts?.loans?.length; else noLoanAlerts">
+        <tr><th>Loan</th><th>P(6m)</th><th>Days</th><th>SLA</th></tr>
+        <tr *ngFor="let a of alerts.loans | slice:0:5">
+          <td>#{{ a.id }} ({{ a.sector }})</td>
+          <td>{{ formatPercent(a.probability) }}</td>
+          <td>{{ a.days_open }}</td>
+          <td><span class="chip" [ngClass]="a.sla_breach ? 'high' : 'medium'">{{ a.sla_breach ? 'Breach' : 'OK' }}</span></td>
+        </tr>
+      </table>
+      <ng-template #noLoanAlerts><div class="muted small">No active loan alerts.</div></ng-template>
+    </div>
+  </mat-card>
+
+  <mat-card class="summary-card" *ngIf="interventions?.length">
+    <div class="title-row">
+      <mat-card-title>Interventions Log</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('interventions', explainPrompts.interventions, {interventions})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.interventions?.text">
+      <span *ngIf="cardExplain.interventions.loading">Loading…</span>
+      <span *ngIf="!cardExplain.interventions.loading">{{ cardExplain.interventions.text }}</span>
+    </div>
+    <div class="muted small">Applied before scenarios; deltas reflected in portfolio what-if.</div>
+    <table class="data-table small-table">
+      <tr><th>Type</th><th>ID</th><th>Action</th><th>Δ</th><th>When</th></tr>
+      <tr *ngFor="let iv of interventions | slice:0:6">
+        <td>{{ iv.entity_type }}</td>
+        <td>{{ iv.entity_id }}</td>
+        <td>{{ iv.action_type }}</td>
+        <td>
+          <span *ngIf="iv.engagement_delta">eng +{{ iv.engagement_delta }}</span>
+          <span *ngIf="iv.inactivity_delta"> idle {{ iv.inactivity_delta }}</span>
+          <span *ngIf="iv.ltv_delta"> ltv {{ iv.ltv_delta }}</span>
+          <span *ngIf="iv.dscr_delta"> dscr {{ iv.dscr_delta }}</span>
+        </td>
+        <td>{{ iv.created_at | date:'short' }}</td>
+      </tr>
+    </table>
+  </mat-card>
+
+  <mat-card class="summary-card col-span-6">
+    <div class="title-row">
+      <mat-card-title>Model Family Overlay</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('familyOverlay', explainPrompts.familyOverlay, {metrics: modelMetrics})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.familyOverlay?.text">
+      <span *ngIf="cardExplain.familyOverlay.loading">Loading…</span>
+      <span *ngIf="!cardExplain.familyOverlay.loading">{{ cardExplain.familyOverlay.text }}</span>
+    </div>
+    <div class="model-select">
+      <mat-form-field appearance="fill">
+        <mat-label>Compare with</mat-label>
+        <mat-select [value]="compareFamily" (selectionChange)="changeCompareFamily($event.value)">
+          <mat-option *ngFor="let fam of modelFamilies" [value]="fam.id">{{ fam.label }}</mat-option>
+        </mat-select>
+      </mat-form-field>
+    </div>
+    <div class="muted small">ROC overlay</div>
+    <canvas baseChart [data]="compareRoc" [options]="lineOptions" [type]="'line'"></canvas>
+    <div class="muted small">PR overlay</div>
+    <canvas baseChart [data]="comparePr" [options]="lineOptions" [type]="'line'"></canvas>
+  </mat-card>
+
+  <mat-card class="summary-card" *ngIf="driftSummary">
+    <div class="title-row">
+      <mat-card-title>Model Stability</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('stability', explainPrompts.stability, {drift: driftSummary})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.stability?.text">
+      <span *ngIf="cardExplain.stability.loading">Loading…</span>
+      <span *ngIf="!cardExplain.stability.loading">{{ cardExplain.stability.text }}</span>
+    </div>
+    <div class="muted small">Status: {{ driftSummary.status }}</div>
+    <div class="muted small">Bucket PSI: {{ driftSummary.bucket_psi | number:'1.3-3' }}</div>
+    <div class="muted small" *ngIf="driftSummary.feature_drifts?.length">Top drifting features:</div>
+    <ul class="muted small" *ngIf="driftSummary.feature_drifts?.length">
+      <li *ngFor="let f of driftSummary.feature_drifts | slice:0:3">
+        {{ f.name }} (Δσ {{ f.delta_std | number:'1.2-2' }})
+      </li>
+    </ul>
+    <div class="muted small" *ngIf="!driftSummary.feature_drifts?.length">No drift detected.</div>
+  </mat-card>
+
+  <mat-card class="summary-card">
+    <div class="title-row">
+      <mat-card-title>Threshold Tuning (explore)</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('threshold', explainPrompts.threshold, {thresholds: thresholdSummary, costFP, costFN})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.threshold?.text">
+      <span *ngIf="cardExplain.threshold.loading">Loading…</span>
+      <span *ngIf="!cardExplain.threshold.loading">{{ cardExplain.threshold.text }}</span>
+    </div>
+    <p class="muted small">Adjust decision threshold to see expected TPR/FPR/precision/recall for current horizon.</p>
+    <mat-slider min="0.1" max="0.9" step="0.02" tickInterval="0.1">
+      <input matSliderThumb [value]="thresholdValue" (valueChange)="onThresholdInput($event)" />
+    </mat-slider>
+    <div class="muted small">
+      Cost per FP: <input class="inline-input" type="number" [(ngModel)]="costFP" /> |
+      Cost per FN: <input class="inline-input" type="number" [(ngModel)]="costFN" />
+    </div>
+    <div class="metric-row" *ngIf="thresholdSummary?.churn">
+      <div>
+        <div class="muted">Churn &#64; {{ thresholdSummary?.churn?.threshold | number:'1.2-2' }}</div>
+        <div class="muted small">TPR {{ (thresholdSummary?.churn?.tpr || 0) | number:'1.2-2' }} |
+          FPR {{ (thresholdSummary?.churn?.fpr || 0) | number:'1.2-2' }}</div>
+        <div class="muted small">Prec {{ (thresholdSummary?.churn?.precision || 0) | number:'1.2-2' }} |
+          Rec {{ (thresholdSummary?.churn?.recall || 0) | number:'1.2-2' }}</div>
+      </div>
+      <div>
+        <div class="muted">Default &#64; {{ thresholdSummary?.default?.threshold | number:'1.2-2' }}</div>
+        <div class="muted small">TPR {{ (thresholdSummary?.default?.tpr || 0) | number:'1.2-2' }} |
+          FPR {{ (thresholdSummary?.default?.fpr || 0) | number:'1.2-2' }}</div>
+        <div class="muted small">Prec {{ (thresholdSummary?.default?.precision || 0) | number:'1.2-2' }} |
+          Rec {{ (thresholdSummary?.default?.recall || 0) | number:'1.2-2' }}</div>
+      </div>
+    </div>
+    <div class="muted" *ngIf="!thresholdSummary?.churn">Threshold stats unavailable.</div>
+    <div class="muted small" *ngIf="thresholdSummary?.churn?.tp !== undefined">
+      <strong>Churn confusion (est.):</strong>
+      TP {{ thresholdSummary?.churn?.tp }} | FP {{ thresholdSummary?.churn?.fp }} | FN {{ thresholdSummary?.churn?.fn }} | TN {{ thresholdSummary?.churn?.tn }}
+    </div>
+    <div class="muted small" *ngIf="thresholdCost('churn')">
+      Est. cost: FP ${{ thresholdCost('churn')?.cost_fp | number:'1.0-0' }}, FN ${{ thresholdCost('churn')?.cost_fn | number:'1.0-0' }} (total ${{ thresholdCost('churn')?.total | number:'1.0-0' }})
+    </div>
+    <div class="muted small" *ngIf="thresholdSummary?.default?.tp !== undefined">
+      <strong>Default confusion (est.):</strong>
+      TP {{ thresholdSummary?.default?.tp }} | FP {{ thresholdSummary?.default?.fp }} | FN {{ thresholdSummary?.default?.fn }} | TN {{ thresholdSummary?.default?.tn }}
+    </div>
+    <div class="muted small" *ngIf="thresholdCost('default')">
+      Est. cost: FP ${{ thresholdCost('default')?.cost_fp | number:'1.0-0' }}, FN ${{ thresholdCost('default')?.cost_fn | number:'1.0-0' }} (total ${{ thresholdCost('default')?.total | number:'1.0-0' }})
+    </div>
+  </mat-card>
+
+  <mat-card class="summary-card">
+    <div class="title-row">
+      <mat-card-title>ROC Curves</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('roc', explainPrompts.roc, {rocData})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.roc?.text">
+      <span *ngIf="cardExplain.roc.loading">Loading…</span>
+      <span *ngIf="!cardExplain.roc.loading">{{ cardExplain.roc.text }}</span>
+    </div>
+    <div class="muted small">Churn & default across selected model family and horizon.</div>
+    <canvas baseChart [data]="rocData" [options]="lineOptions" [type]="'line'"></canvas>
+  </mat-card>
+
+  <mat-card class="summary-card">
+    <div class="title-row">
+      <mat-card-title>Precision-Recall</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('pr', explainPrompts.pr, {prData})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.pr?.text">
+      <span *ngIf="cardExplain.pr.loading">Loading…</span>
+      <span *ngIf="!cardExplain.pr.loading">{{ cardExplain.pr.text }}</span>
+    </div>
+    <div class="muted small">Precision vs recall by threshold; useful for imbalanced risk flags.</div>
+    <canvas baseChart [data]="prData" [options]="lineOptions" [type]="'line'"></canvas>
+  </mat-card>
+
+  <mat-card class="summary-card">
+    <div class="title-row">
+      <mat-card-title>Portfolio What-if Scenario</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('portfolio', explainPrompts.portfolio, {scenarioResult})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.portfolio?.text">
+      <span *ngIf="cardExplain.portfolio.loading">Loading…</span>
+      <span *ngIf="!cardExplain.portfolio.loading">{{ cardExplain.portfolio.text }}</span>
+    </div>
+    <p class="muted small">Synthetic intervention: boost engagement for bottom quartile investors and improve DSCR/LTV for risky loans.</p>
+    <button mat-flat-button color="primary" (click)="runPortfolioScenario()" [disabled]="loading">Run Scenario</button>
+    <div class="muted small" *ngIf="scenarioResult">
+      <div>Churn avg: {{ scenarioResult?.base?.avg_churn | number:'1.2-2' }} → {{ scenarioResult?.scenario?.avg_churn | number:'1.2-2' }}</div>
+      <div>Default avg: {{ scenarioResult?.base?.avg_default | number:'1.2-2' }} → {{ scenarioResult?.scenario?.avg_default | number:'1.2-2' }}</div>
+      <div>High-risk investors: {{ scenarioResult?.base?.high_risk_investors }} → {{ scenarioResult?.scenario?.high_risk_investors }}</div>
+      <div>High-risk loans: {{ scenarioResult?.base?.high_risk_loans }} → {{ scenarioResult?.scenario?.high_risk_loans }}</div>
+    </div>
+  </mat-card>
+
+  <mat-card class="summary-card">
+    <div class="title-row">
+      <mat-card-title>Data Readiness</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('readiness', explainPrompts.readiness, {audit: dataAudit})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.readiness?.text">
+      <span *ngIf="cardExplain.readiness.loading">Loading…</span>
+      <span *ngIf="!cardExplain.readiness.loading">{{ cardExplain.readiness.text }}</span>
+    </div>
+    <div class="muted small" *ngIf="dataAudit">
+      <div><strong>Encode:</strong> {{ dataAudit.categorical_to_encode?.join(', ') || 'None' }}</div>
+      <div><strong>Scale:</strong> {{ dataAudit.scaling_recommended?.join(', ') || 'None' }}</div>
+      <div><strong>Strategy:</strong> {{ dataAudit.strategy_recommendation }}</div>
+      <div class="muted small">Missingness (investors, %):</div>
+      <ul class="muted small">
+        <li *ngFor="let k of (dataAudit.investor_missing_pct | keyvalue) | slice:0:4">{{ k.key }}: {{ k.value }}%</li>
+      </ul>
+      <div class="muted small">Missingness (loans, %):</div>
+      <ul class="muted small">
+        <li *ngFor="let k of (dataAudit.loan_missing_pct | keyvalue) | slice:0:4">{{ k.key }}: {{ k.value }}%</li>
+      </ul>
+      <div class="muted small" *ngIf="dataAudit.investor_missing_by_tolerance">
+        <strong>By risk tolerance (investors, %):</strong>
+        <ul class="muted small">
+          <li *ngFor="let k of (dataAudit.investor_missing_by_tolerance.inactivity_days | keyvalue)">
+            inactivity_days – {{ k.key }}: {{ k.value }}%
+          </li>
+        </ul>
+      </div>
+      <div class="muted small" *ngIf="dataAudit.loan_missing_by_sector">
+        <strong>By sector (loans, %):</strong>
+        <ul class="muted small">
+          <li *ngFor="let k of (dataAudit.loan_missing_by_sector.dscr | keyvalue)">
+            dscr – {{ k.key }}: {{ k.value }}%
+          </li>
+        </ul>
+      </div>
+    </div>
+    <div class="muted" *ngIf="!dataAudit">Data audit unavailable.</div>
+  </mat-card>
+
+  <mat-card class="summary-card" *ngIf="dataAudit">
+    <div class="title-row">
+      <mat-card-title>Data Health Signals</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('health', explainPrompts.health, {audit: dataAudit})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.health?.text">
+      <span *ngIf="cardExplain.health.loading">Loading…</span>
+      <span *ngIf="!cardExplain.health.loading">{{ cardExplain.health.text }}</span>
+    </div>
+    <div class="muted small status-row">
+      <span class="status-dot" [ngClass]="{'ok': !(dataAudit.categorical_to_encode?.length), 'warn': dataAudit.categorical_to_encode?.length}"></span>
+      Encoding ready
+    </div>
+    <div class="muted small status-row">
+      <span class="status-dot" [ngClass]="{'ok': !(dataAudit.scaling_recommended?.length), 'warn': dataAudit.scaling_recommended?.length}"></span>
+      Scaling recommended: {{ dataAudit.scaling_recommended?.join(', ') || 'None' }}
+    </div>
+    <div class="muted small">Missingness by tolerance (investors, % inactivity_days):</div>
+    <table class="data-table small-table">
+      <tr><th>Risk tolerance</th><th>Missing %</th></tr>
+      <tr *ngFor="let row of (dataAudit.investor_missing_by_tolerance?.inactivity_days | keyvalue)">
+        <td>{{ row.key }}</td>
+        <td>{{ row.value }}%</td>
+      </tr>
+    </table>
+    <div class="muted small">Missingness by sector (loans, % dscr):</div>
+    <table class="data-table small-table">
+      <tr><th>Sector</th><th>Missing %</th></tr>
+      <tr *ngFor="let row of (dataAudit.loan_missing_by_sector?.dscr | keyvalue)">
+        <td>{{ row.key }}</td>
+        <td>{{ row.value }}%</td>
+      </tr>
+    </table>
+  </mat-card>
+
+  <mat-card class="summary-card">
+    <div class="title-row">
+      <mat-card-title>Investor Churn Buckets</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('investorBuckets', explainPrompts.investorBuckets, {buckets: charts.churnBuckets})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.investorBuckets?.text">
+      <span *ngIf="cardExplain.investorBuckets.loading">Loading…</span>
+      <span *ngIf="!cardExplain.investorBuckets.loading">{{ cardExplain.investorBuckets.text }}</span>
+    </div>
+    <canvas
+      baseChart
+      [data]="{ labels: charts.churnBuckets.labels, datasets: [{ data: charts.churnBuckets.data, backgroundColor: ['#ef4444','#f59e0b','#22c55e'] }] }"
+      [options]="chartOptions"
+      [type]="'bar'">
+    </canvas>
+    <p class="subtitle">
+      Avg churn risk: {{ report?.summary_kpis.avg_churn_risk | number: '1.2-2' }}
+      (prev: {{ report?.summary_kpis.prev_day_avg_churn_risk | number: '1.2-2' }})
+    </p>
+  </mat-card>
+
+  <mat-card class="summary-card">
+    <div class="title-row">
+      <mat-card-title>Loan Default Buckets</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('loanBuckets', explainPrompts.loanBuckets, {buckets: charts.defaultBuckets})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.loanBuckets?.text">
+      <span *ngIf="cardExplain.loanBuckets.loading">Loading…</span>
+      <span *ngIf="!cardExplain.loanBuckets.loading">{{ cardExplain.loanBuckets.text }}</span>
+    </div>
+    <canvas
+      baseChart
+      [data]="{ labels: charts.defaultBuckets.labels, datasets: [{ data: charts.defaultBuckets.data, backgroundColor: ['#ef4444','#f59e0b','#22c55e'] }] }"
+      [options]="chartOptions"
+      [type]="'bar'">
+    </canvas>
+    <p class="subtitle">
+      High-risk exposure: ${{ report?.summary_kpis.high_default_exposure | number: '1.0-0' }}
+    </p>
+  </mat-card>
+
+  <mat-card class="summary-card">
+    <div class="title-row">
+      <mat-card-title>Engagement Snapshot</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('engagementSnapshot', explainPrompts.engagementSnapshot, {report})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.engagementSnapshot?.text">
+      <span *ngIf="cardExplain.engagementSnapshot.loading">Loading…</span>
+      <span *ngIf="!cardExplain.engagementSnapshot.loading">{{ cardExplain.engagementSnapshot.text }}</span>
+    </div>
+    <p class="subtitle">Avg engagement: {{ report?.summary_kpis.engagement_avg | number: '1.1-1' }}</p>
+    <p class="subtitle">Avg email open rate: {{ report?.summary_kpis.email_open_avg | number: '1.2-2' }}</p>
+    <p class="subtitle" *ngIf="report?.summary_kpis.churn_by_tolerance">
+      High churn by tolerance:
+      low={{ report?.summary_kpis.churn_by_tolerance?.low || 0 }},
+      medium={{ report?.summary_kpis.churn_by_tolerance?.medium || 0 }},
+      high={{ report?.summary_kpis.churn_by_tolerance?.high || 0 }}
+    </p>
+  </mat-card>
+
+  <mat-card class="wide-card">
+    <mat-card-title>Top At-Risk Investors</mat-card-title>
+    <div class="table-viewport">
+      <table class="data-table" *ngIf="topInvestors().length; else noInvestors">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Probability</th>
+            <th>Bucket</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let inv of topInvestors()">
+            <td>{{ inv.name }}</td>
+            <td>{{ formatPercent(inv.probability) }}</td>
+            <td><span class="chip" [ngClass]="inv.bucket.toLowerCase()">{{ inv.bucket }}</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <ng-template #noInvestors><div class="muted">No investors found.</div></ng-template>
+  </mat-card>
+
+  <mat-card class="wide-card">
+    <mat-card-title>Top At-Risk Loans</mat-card-title>
+    <div class="table-viewport">
+      <table class="data-table" *ngIf="topLoans().length; else noLoans">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Sector</th>
+            <th>Amount</th>
+            <th>Probability</th>
+            <th>Bucket</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let loan of topLoans()">
+            <td>#{{ loan.id }}</td>
+            <td>{{ loan.sector }}</td>
+            <td>${{ loan.amount | number: '1.0-0' }}</td>
+            <td>{{ formatPercent(loan.probability) }}</td>
+            <td><span class="chip" [ngClass]="loan.bucket.toLowerCase()">{{ loan.bucket }}</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <ng-template #noLoans><div class="muted">No loans found.</div></ng-template>
+  </mat-card>
+
+  <mat-card class="wide-card">
+    <mat-card-title>Sector Exposure</mat-card-title>
+    <canvas
+      baseChart
+      [data]="{ labels: charts.sectorExposure.labels, datasets: [{ data: charts.sectorExposure.data, backgroundColor: '#19c3b1' }] }"
+      [options]="chartOptions"
+      [type]="'bar'">
+    </canvas>
+  </mat-card>
+
+  <mat-card class="wide-card" *ngIf="analyticsRaw?.cohort_risk?.sector_bucket_matrix">
+    <mat-card-title>Default Risk Heatmap (Sector x Bucket)</mat-card-title>
+    <table class="data-table small-table">
+      <tr><th>Sector</th><th>Low</th><th>Medium</th><th>High</th></tr>
+      <tr *ngFor="let row of (analyticsRaw.cohort_risk.sector_bucket_matrix | keyvalue)">
+        <td>{{ row.key }}</td>
+        <td>{{ row.value?.Low || 0 }}</td>
+        <td>{{ row.value?.Medium || 0 }}</td>
+        <td>{{ row.value?.High || 0 }}</td>
+      </tr>
+    </table>
+  </mat-card>
+
+  <mat-card class="wide-card" *ngIf="analyticsRaw?.cohort_risk?.aum_tolerance_matrix">
+    <mat-card-title>Churn Heatmap (AUM band x Risk Tolerance)</mat-card-title>
+    <table class="data-table small-table">
+      <tr>
+        <th>AUM Band</th><th>Low</th><th>Medium</th><th>High</th>
+      </tr>
+      <tr *ngFor="let row of (analyticsRaw.cohort_risk.aum_tolerance_matrix | keyvalue)">
+        <td>{{ row.key }}</td>
+        <td>{{ row.value?.low || row.value?.Low || 0 | number:'1.2-2' }}</td>
+        <td>{{ row.value?.medium || row.value?.Medium || 0 | number:'1.2-2' }}</td>
+        <td>{{ row.value?.high || row.value?.High || 0 | number:'1.2-2' }}</td>
+      </tr>
+    </table>
+  </mat-card>
+
+  <mat-card class="wide-card" *ngIf="heatmap('churn_risk_tolerance_by_aum')">
+    <mat-card-title>Cohort Heatmap (metrics)</mat-card-title>
+    <div class="muted small">Churn label averages by risk tolerance × AUM band</div>
+    <table class="heatmap-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th *ngFor="let col of heatmap('churn_risk_tolerance_by_aum').cols">{{ col }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let row of heatmap('churn_risk_tolerance_by_aum').rows; let rIdx = index">
+          <th>{{ row }}</th>
+          <td *ngFor="let col of heatmap('churn_risk_tolerance_by_aum').cols; let cIdx = index">
+            {{ heatmap('churn_risk_tolerance_by_aum').values[rIdx][cIdx] | percent:'1.0-1' }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </mat-card>
+
+  <mat-card class="wide-card" *ngIf="heatmap('default_sector_by_ltv')">
+    <mat-card-title>Default Heatmap</mat-card-title>
+    <div class="muted small">Default label averages by sector × LTV band</div>
+    <table class="heatmap-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th *ngFor="let col of heatmap('default_sector_by_ltv').cols">{{ col }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let row of heatmap('default_sector_by_ltv').rows; let rIdx = index">
+          <th>{{ row }}</th>
+          <td *ngFor="let col of heatmap('default_sector_by_ltv').cols; let cIdx = index">
+            {{ heatmap('default_sector_by_ltv').values[rIdx][cIdx] | percent:'1.0-1' }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </mat-card>
+
+  <mat-card class="wide-card" *ngIf="brokerHeatmaps.default">
+    <div class="title-row">
+      <mat-card-title>Broker vs Sector Risk</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('brokerSector', explainPrompts.brokerSector, {brokerHeatmaps})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.brokerSector?.text">
+      <span *ngIf="cardExplain.brokerSector.loading">Loading…</span>
+      <span *ngIf="!cardExplain.brokerSector.loading">{{ cardExplain.brokerSector.text }}</span>
+    </div>
+    <div class="table-actions">
+      <div class="muted small">Showing {{ brokerRowsPaged().length }} of {{ brokerRowCount() }} brokers</div>
+      <div class="pager">
+        <button mat-stroked-button color="primary" (click)="setBrokerPage(-1)" [disabled]="brokerPage===0">Prev</button>
+        <button mat-stroked-button color="primary" (click)="setBrokerPage(1)" [disabled]="(brokerPage+1) * brokerPageSize >= brokerRowCount()">Next</button>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table class="heatmap-table min-wide">
+        <thead>
+          <tr><th></th><th *ngFor="let c of brokerHeatmaps.default.cols">{{ c }}</th></tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let r of brokerRowsPaged(); let rIdx=index">
+            <th>{{ r }}</th>
+            <td *ngFor="let c of brokerHeatmaps.default.cols; let cIdx=index">
+              {{ brokerHeatmaps.default.values[(brokerPage*brokerPageSize)+rIdx][cIdx] | percent:'1.1-1' }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </mat-card>
+
+  <mat-card class="summary-card" *ngIf="cohortModels().churn || cohortModels().default">
+    <div class="title-row">
+      <mat-card-title>Cohort Models (simplified)</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('cohortModels', explainPrompts.cohortModels, {cohort: cohortModels()})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.cohortModels?.text">
+      <span *ngIf="cardExplain.cohortModels.loading">Loading…</span>
+      <span *ngIf="!cardExplain.cohortModels.loading">{{ cardExplain.cohortModels.text }}</span>
+    </div>
+    <div class="muted small" *ngIf="cohortModels().churn">
+      Churn by tolerance:
+      <span *ngFor="let row of (cohortModels().churn | keyvalue)">
+        {{ row.key }}={{ row.value?.bucket || row.value?.probability | number:'1.2-2' }};&nbsp;
+      </span>
+    </div>
+    <div class="muted small" *ngIf="cohortModels().default">
+      Default by sector:
+      <span *ngFor="let row of (cohortModels().default | keyvalue)">
+        {{ row.key }}={{ row.value?.bucket || row.value?.probability | number:'1.2-2' }};&nbsp;
+      </span>
+    </div>
+  </mat-card>
+
+  <mat-card class="wide-card">
+    <div class="title-row">
+      <mat-card-title>Cohort Risk Averages</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('cohortRisk', explainPrompts.cohortRisk, {cohort: cohortRisk()})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.cohortRisk?.text">
+      <span *ngIf="cardExplain.cohortRisk.loading">Loading…</span>
+      <span *ngIf="!cardExplain.cohortRisk.loading">{{ cardExplain.cohortRisk.text }}</span>
+    </div>
+    <div class="cohort-grid">
+      <div>
+        <div class="muted">Churn avg by risk tolerance</div>
+        <table class="data-table small-table">
+          <tr *ngFor="let row of (cohortRisk().churn_avg_by_risk_tolerance | keyvalue)">
+            <td>{{ row.key }}</td>
+            <td>{{ row.value | number: '1.2-2' }}</td>
+          </tr>
+        </table>
+      </div>
+      <div>
+        <div class="muted">Churn avg by AUM band</div>
+        <table class="data-table small-table">
+          <tr *ngFor="let row of (cohortRisk().churn_avg_by_aum_band | keyvalue)">
+            <td>{{ row.key }}</td>
+            <td>{{ row.value | number: '1.2-2' }}</td>
+          </tr>
+        </table>
+      </div>
+      <div>
+        <div class="muted">Default avg by sector</div>
+        <table class="data-table small-table">
+          <tr *ngFor="let row of (cohortRisk().default_avg_by_sector | keyvalue)">
+            <td>{{ row.key }}</td>
+            <td>{{ row.value | number: '1.2-2' }}</td>
+          </tr>
+        </table>
+      </div>
+      <div *ngIf="cohortRisk().sector_bucket_matrix">
+        <div class="muted">Default buckets by sector</div>
+        <table class="data-table small-table">
+          <tr>
+            <th>Sector</th><th>Low</th><th>Med</th><th>High</th>
+          </tr>
+          <tr *ngFor="let row of (cohortRisk().sector_bucket_matrix | keyvalue)">
+            <td>{{ row.key }}</td>
+            <td>{{ row.value?.Low || 0 }}</td>
+            <td>{{ row.value?.Medium || 0 }}</td>
+            <td>{{ row.value?.High || 0 }}</td>
+          </tr>
+        </table>
+      </div>
+      <div *ngIf="cohortRisk().aum_tolerance_matrix">
+        <div class="muted">Churn avg by AUM x tolerance</div>
+        <table class="data-table small-table">
+          <tr>
+            <th>Band</th><th>Low</th><th>Medium</th><th>High</th>
+          </tr>
+          <tr *ngFor="let row of (cohortRisk().aum_tolerance_matrix | keyvalue)">
+            <td>{{ row.key }}</td>
+            <td>{{ row.value?.low || row.value?.Low || 0 | number:'1.2-2' }}</td>
+            <td>{{ row.value?.medium || row.value?.Medium || 0 | number:'1.2-2' }}</td>
+            <td>{{ row.value?.high || row.value?.High || 0 | number:'1.2-2' }}</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </mat-card>
+
+  <mat-card class="wide-card" *ngIf="segmentScores()?.churn || segmentScores()?.default">
+    <div class="title-row">
+      <mat-card-title>Segment Risk (cohort models)</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('segmentRisk', explainPrompts.segmentRisk, {segmentScores: segmentScores()})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.segmentRisk?.text">
+      <span *ngIf="cardExplain.segmentRisk.loading">Loading…</span>
+      <span *ngIf="!cardExplain.segmentRisk.loading">{{ cardExplain.segmentRisk.text }}</span>
+    </div>
+    <div class="cohort-grid">
+      <div *ngIf="segmentScores().churn?.risk_tolerance">
+        <div class="muted">Churn by tolerance</div>
+        <table class="data-table small-table">
+          <tr><th>Tolerance</th><th>Avg</th><th>Bucket</th></tr>
+          <tr *ngFor="let row of (segmentScores().churn?.risk_tolerance | keyvalue)">
+            <td>{{ row.key }}</td>
+            <td>{{ row.value?.avg | number:'1.2-2' }}</td>
+            <td>{{ row.value?.bucket }}</td>
+          </tr>
+        </table>
+      </div>
+      <div *ngIf="segmentScores().churn?.aum_band">
+        <div class="muted">Churn by AUM band</div>
+        <table class="data-table small-table">
+          <tr><th>Band</th><th>Avg</th><th>Bucket</th></tr>
+          <tr *ngFor="let row of (segmentScores().churn?.aum_band | keyvalue)">
+            <td>{{ row.key }}</td>
+            <td>{{ row.value?.avg | number:'1.2-2' }}</td>
+            <td>{{ row.value?.bucket }}</td>
+          </tr>
+        </table>
+      </div>
+      <div *ngIf="segmentScores().default?.sector">
+        <div class="muted">Default by sector</div>
+        <table class="data-table small-table">
+          <tr><th>Sector</th><th>Avg</th><th>Bucket</th></tr>
+          <tr *ngFor="let row of (segmentScores().default?.sector | keyvalue)">
+            <td>{{ row.key }}</td>
+            <td>{{ row.value?.avg | number:'1.2-2' }}</td>
+            <td>{{ row.value?.bucket }}</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </mat-card>
+
+  <mat-card class="wide-card" *ngIf="predictorBenchmarks().churn.length || predictorBenchmarks().default.length">
+    <div class="title-row">
+      <mat-card-title>Predictor Explorer (single-feature AUC)</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('predictorExplorer', explainPrompts.predictorExplorer, {predictors: predictorBenchmarks()})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.predictorExplorer?.text">
+      <span *ngIf="cardExplain.predictorExplorer.loading">Loading…</span>
+      <span *ngIf="!cardExplain.predictorExplorer.loading">{{ cardExplain.predictorExplorer.text }}</span>
+    </div>
+    <div class="cohort-grid">
+      <div>
+        <div class="muted">Churn</div>
+        <table class="data-table small-table">
+          <tr><th>Feature</th><th>AUC</th></tr>
+          <tr *ngFor="let row of predictorBenchmarks().churn">
+            <td>{{ row.name }}</td>
+            <td>{{ row.auc | number:'1.2-2' }}</td>
+          </tr>
+        </table>
+        <canvas baseChart [data]="predictorCharts.churn" [options]="chartOptions" [type]="'bar'"></canvas>
+      </div>
+      <div>
+        <div class="muted">Default</div>
+        <table class="data-table small-table">
+          <tr><th>Feature</th><th>AUC</th></tr>
+          <tr *ngFor="let row of predictorBenchmarks().default">
+            <td>{{ row.name }}</td>
+            <td>{{ row.auc | number:'1.2-2' }}</td>
+          </tr>
+        </table>
+        <canvas baseChart [data]="predictorCharts.default" [options]="chartOptions" [type]="'bar'"></canvas>
+      </div>
+      <div *ngIf="predictorCharts.families?.datasets?.length">
+        <div class="muted">Model families (6m)</div>
+        <canvas baseChart [data]="predictorCharts.families" [options]="chartOptions" [type]="'bar'"></canvas>
+      </div>
+    </div>
+  </mat-card>
+
+  <mat-card class="summary-card" *ngIf="diagnosticsCurves.churn">
+    <div class="title-row">
+      <mat-card-title>1D Diagnostics (Churn)</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('diagChurn', explainPrompts.diagChurn, {diagnostics: diagnosticsCurves.churn})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.diagChurn?.text">
+      <span *ngIf="cardExplain.diagChurn.loading">Loading…</span>
+      <span *ngIf="!cardExplain.diagChurn.loading">{{ cardExplain.diagChurn.text }}</span>
+    </div>
+    <div class="muted small">Logistic vs k-NN on engagement_score</div>
+    <canvas baseChart [data]="diagnosticsCurves.churn" [options]="lineOptions" [type]="'line'"></canvas>
+  </mat-card>
+
+  <mat-card class="summary-card" *ngIf="diagnosticsCurves.default">
+    <div class="title-row">
+      <mat-card-title>1D Diagnostics (Default)</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('diagDefault', explainPrompts.diagDefault, {diagnostics: diagnosticsCurves.default})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.diagDefault?.text">
+      <span *ngIf="cardExplain.diagDefault.loading">Loading…</span>
+      <span *ngIf="!cardExplain.diagDefault.loading">{{ cardExplain.diagDefault.text }}</span>
+    </div>
+    <div class="muted small">Logistic vs k-NN on LTV ratio</div>
+    <canvas baseChart [data]="diagnosticsCurves.default" [options]="lineOptions" [type]="'line'"></canvas>
+  </mat-card>
+
+  <div
+    class="fairness-layout col-span-12"
+    *ngIf="fairnessCharts.churn || fairnessCharts.default || nonLinearCharts.churn || nonLinearCharts.default || modelMetrics?.correlation || imbalance || robustness || rocExplorer?.datasets?.length">
+    <mat-card class="summary-card fairness-primary" *ngIf="fairnessCharts.churn || fairnessCharts.default">
+      <div class="title-row">
+        <mat-card-title>Fairness / Segment Performance</mat-card-title>
+        <button class="explain-btn" (click)="explainCard('fairness', explainPrompts.fairness, {fairness: fairnessCharts})">Explain</button>
+      </div>
+      <div class="muted small explain-text" *ngIf="cardExplain.fairness?.text">
+        <span *ngIf="cardExplain.fairness.loading">Loading…</span>
+        <span *ngIf="!cardExplain.fairness.loading">{{ cardExplain.fairness.text }}</span>
+      </div>
+      <div class="muted small" *ngIf="fairnessCharts.churn">
+        <div>Churn AUC by tolerance</div>
+        <canvas baseChart [data]="fairnessCharts.churn" [options]="chartOptions" [type]="'bar'"></canvas>
+      </div>
+      <div class="muted small" *ngIf="fairnessCharts.churnAp">
+        <div>Churn AP by tolerance</div>
+        <canvas baseChart [data]="fairnessCharts.churnAp" [options]="chartOptions" [type]="'bar'"></canvas>
+      </div>
+      <div class="muted small" *ngIf="fairnessCharts.default">
+        <div>Default AUC by sector</div>
+        <canvas baseChart [data]="fairnessCharts.default" [options]="chartOptions" [type]="'bar'"></canvas>
+      </div>
+      <div class="muted small" *ngIf="fairnessCharts.defAp">
+        <div>Default AP by sector</div>
+        <canvas baseChart [data]="fairnessCharts.defAp" [options]="chartOptions" [type]="'bar'"></canvas>
+      </div>
+    </mat-card>
+
+    <div class="side-stack">
+      <mat-card class="summary-card" *ngIf="nonLinearCharts.churn">
+        <div class="title-row">
+          <mat-card-title>Non-linear Pattern (Churn)</mat-card-title>
+          <button class="explain-btn" (click)="explainCard('nonLinearChurn', explainPrompts.nonLinearChurn, {curve: nonLinearCharts.churn})">Explain</button>
+        </div>
+        <div class="muted small explain-text" *ngIf="cardExplain.nonLinearChurn?.text">
+          <span *ngIf="cardExplain.nonLinearChurn.loading">Loading…</span>
+          <span *ngIf="!cardExplain.nonLinearChurn.loading">{{ cardExplain.nonLinearChurn.text }}</span>
+        </div>
+        <canvas baseChart [data]="nonLinearCharts.churn" [options]="lineOptions" [type]="'line'"></canvas>
+      </mat-card>
+      <mat-card class="summary-card" *ngIf="nonLinearCharts.default">
+        <div class="title-row">
+          <mat-card-title>Non-linear Pattern (Default)</mat-card-title>
+          <button class="explain-btn" (click)="explainCard('nonLinearDefault', explainPrompts.nonLinearDefault, {curve: nonLinearCharts.default})">Explain</button>
+        </div>
+        <div class="muted small explain-text" *ngIf="cardExplain.nonLinearDefault?.text">
+          <span *ngIf="cardExplain.nonLinearDefault.loading">Loading…</span>
+          <span *ngIf="!cardExplain.nonLinearDefault.loading">{{ cardExplain.nonLinearDefault.text }}</span>
+        </div>
+        <canvas baseChart [data]="nonLinearCharts.default" [options]="lineOptions" [type]="'line'"></canvas>
+      </mat-card>
+
+      <mat-card class="summary-card" *ngIf="modelMetrics?.correlation">
+        <div class="title-row">
+          <mat-card-title>Collinearity Watchlist</mat-card-title>
+          <button class="explain-btn" (click)="explainCard('correlation', explainPrompts.correlation, {correlation: modelMetrics?.correlation})">Explain</button>
+        </div>
+        <div class="muted small">Top correlated pairs (|ρ|≥0.8)</div>
+        <table class="data-table small-table" *ngIf="modelMetrics.correlation.churn?.high_corr?.length">
+          <tr><th>Churn</th><th>|ρ|</th></tr>
+          <tr *ngFor="let row of modelMetrics.correlation.churn.high_corr">
+            <td>{{ row.pair }}</td><td>{{ row.corr | number:'1.2-2' }}</td>
+          </tr>
+        </table>
+        <table class="data-table small-table" *ngIf="modelMetrics.correlation.default?.high_corr?.length">
+          <tr><th>Default</th><th>|ρ|</th></tr>
+          <tr *ngFor="let row of modelMetrics.correlation.default.high_corr">
+            <td>{{ row.pair }}</td><td>{{ row.corr | number:'1.2-2' }}</td>
+          </tr>
+        </table>
+      </mat-card>
+
+      <mat-card class="summary-card" *ngIf="imbalance">
+        <div class="title-row">
+          <mat-card-title>Imbalance Snapshot</mat-card-title>
+          <button class="explain-btn" (click)="explainCard('imbalanceCard', explainPrompts.imbalanceCard, {imbalance})">Explain</button>
+        </div>
+        <div class="muted small explain-text" *ngIf="cardExplain.imbalanceCard?.text">
+          <span *ngIf="cardExplain.imbalanceCard.loading">Loading…</span>
+          <span *ngIf="!cardExplain.imbalanceCard.loading">{{ cardExplain.imbalanceCard.text }}</span>
+        </div>
+        <div class="muted small">Churn positives: {{ imbalance.churn?.positive_rate | percent:'1.1-1' }} (n={{ imbalance.churn?.count || 0 }})</div>
+        <div class="muted small">Default positives: {{ imbalance.default?.positive_rate | percent:'1.1-1' }} (n={{ imbalance.default?.count || 0 }})</div>
+        <div class="muted small" *ngIf="imbalance.churn?.segment_positive_rate">
+          By tolerance:
+          <span *ngFor="let row of (imbalance.churn.segment_positive_rate | keyvalue)">
+            {{ row.key }} {{ row.value | percent:'1.0-0' }}&nbsp;
+          </span>
+        </div>
+        <div class="muted small" *ngIf="imbalance.default?.segment_positive_rate">
+          By sector:
+          <span *ngFor="let row of (imbalance.default.segment_positive_rate | keyvalue)">
+            {{ row.key }} {{ row.value | percent:'1.0-0' }}&nbsp;
+          </span>
+        </div>
+      </mat-card>
+
+      <mat-card class="summary-card" *ngIf="robustness">
+        <div class="title-row">
+          <mat-card-title>Robustness Lens</mat-card-title>
+          <button class="explain-btn" (click)="explainCard('robustness', explainPrompts.robustness, {robustness, modelMetrics})">Explain</button>
+        </div>
+        <div class="muted small explain-text" *ngIf="cardExplain.robustness?.text">
+          <span *ngIf="cardExplain.robustness.loading">Loading…</span>
+          <span *ngIf="!cardExplain.robustness.loading">{{ cardExplain.robustness.text }}</span>
+        </div>
+        <div class="muted small" *ngIf="robustness.bootstrap_ci?.churn?.auc">
+          Churn AUC CI: {{ robustness.bootstrap_ci.churn.auc.mean | number:'1.2-2' }} [{{ robustness.bootstrap_ci.churn.auc.ci[0] | number:'1.2-2' }} – {{ robustness.bootstrap_ci.churn.auc.ci[1] | number:'1.2-2' }}]
+        </div>
+        <div class="muted small" *ngIf="robustness.bootstrap_ci?.default?.auc">
+          Default AUC CI: {{ robustness.bootstrap_ci.default.auc.mean | number:'1.2-2' }} [{{ robustness.bootstrap_ci.default.auc.ci[0] | number:'1.2-2' }} – {{ robustness.bootstrap_ci.default.auc.ci[1] | number:'1.2-2' }}]
+        </div>
+        <div class="muted small" *ngIf="robustness.sensitivity?.churn">
+          Top sensitivity (churn):
+          <span *ngFor="let row of (robustness.sensitivity.churn | keyvalue) | slice:0:1">
+            {{ row.key }} up {{ row.value.up_flip_pct*100 | number:'1.1-1' }}%
+          </span>
+        </div>
+        <div class="muted small" *ngIf="robustness.sensitivity?.default">
+          Top sensitivity (default):
+          <span *ngFor="let row of (robustness.sensitivity.default | keyvalue) | slice:0:1">
+            {{ row.key }} up {{ row.value.up_flip_pct*100 | number:'1.1-1' }}%
+          </span>
+        </div>
+        <div class="muted small" *ngIf="modelMetrics?.segment_roc">
+          Segment ROC (churn): <span *ngFor="let row of (modelMetrics.segment_roc.churn | keyvalue)">{{ row.key }} {{ row.value | number:'1.2-2' }}&nbsp;</span>
+        </div>
+        <div class="muted small" *ngIf="modelMetrics?.segment_roc">
+          Segment ROC (default): <span *ngFor="let row of (modelMetrics.segment_roc.default | keyvalue)">{{ row.key }} {{ row.value | number:'1.2-2' }}&nbsp;</span>
+        </div>
+      </mat-card>
+
+      <mat-card class="summary-card" *ngIf="rocExplorer?.datasets?.length">
+        <div class="title-row">
+          <mat-card-title>ROC Explorer (scenario points)</mat-card-title>
+          <button class="explain-btn" (click)="explainCard('rocExplorer', explainPrompts.rocExplorer, {rocExplorer})">Explain</button>
+        </div>
+        <div class="muted small explain-text" *ngIf="cardExplain.rocExplorer?.text">
+          <span *ngIf="cardExplain.rocExplorer.loading">Loading…</span>
+          <span *ngIf="!cardExplain.rocExplorer.loading">{{ cardExplain.rocExplorer.text }}</span>
+        </div>
+        <canvas baseChart [data]="rocExplorer" [options]="lineOptions" [type]="'line'"></canvas>
+      </mat-card>
+    </div>
+  </div>
+
+  <mat-card class="wide-card" *ngIf="edaCharts.investor?.engagement || edaCharts.investor?.age">
+    <div class="title-row">
+      <mat-card-title>EDA – Investors</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('edaInvestors', explainPrompts.edaInvestors, {eda: edaCharts.investor})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.edaInvestors?.text">
+      <span *ngIf="cardExplain.edaInvestors.loading">Loading…</span>
+      <span *ngIf="!cardExplain.edaInvestors.loading">{{ cardExplain.edaInvestors.text }}</span>
+    </div>
+    <div class="cohort-grid">
+      <div *ngIf="edaCharts.investor?.engagement">
+        <div class="muted small">Engagement histogram</div>
+        <canvas baseChart [data]="edaCharts.investor.engagement" [options]="chartOptions" [type]="'bar'"></canvas>
+      </div>
+      <div *ngIf="edaCharts.investor?.email_open">
+        <div class="muted small">Email open histogram</div>
+        <canvas baseChart [data]="edaCharts.investor.email_open" [options]="chartOptions" [type]="'bar'"></canvas>
+      </div>
+      <div *ngIf="edaCharts.investor?.age">
+        <div class="muted small">Age histogram</div>
+        <canvas baseChart [data]="edaCharts.investor.age" [options]="chartOptions" [type]="'bar'"></canvas>
+      </div>
+    </div>
+    <div class="muted small" *ngIf="edaCharts.investor?.outliers">
+      Outliers: engagement {{ edaCharts.investor.outliers.engagement_score || 0 }}, AUM {{ edaCharts.investor.outliers.aum || 0 }}
+    </div>
+    <div class="muted small" *ngIf="edaCharts.investor?.corr">
+      Correlation (top 3):
+      <span *ngFor="let row of (edaCharts.investor.corr | keyvalue) | slice:0:1">
+        {{ row.key }}...
+      </span>
+    </div>
+  </mat-card>
+
+  <mat-card class="wide-card" *ngIf="edaCharts.loan?.ltv || edaCharts.loan?.dscr">
+    <div class="title-row">
+      <mat-card-title>EDA – Loans</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('edaLoans', explainPrompts.edaLoans, {eda: edaCharts.loan})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.edaLoans?.text">
+      <span *ngIf="cardExplain.edaLoans.loading">Loading…</span>
+      <span *ngIf="!cardExplain.edaLoans.loading">{{ cardExplain.edaLoans.text }}</span>
+    </div>
+    <div class="cohort-grid">
+      <div *ngIf="edaCharts.loan?.ltv">
+        <div class="muted small">LTV histogram</div>
+        <canvas baseChart [data]="edaCharts.loan.ltv" [options]="chartOptions" [type]="'bar'"></canvas>
+      </div>
+      <div *ngIf="edaCharts.loan?.dscr">
+        <div class="muted small">DSCR histogram</div>
+        <canvas baseChart [data]="edaCharts.loan.dscr" [options]="chartOptions" [type]="'bar'"></canvas>
+      </div>
+    </div>
+    <div class="muted small" *ngIf="edaCharts.loan?.outliers">
+      Outliers: LTV {{ edaCharts.loan.outliers.ltv_ratio || 0 }}, DSCR {{ edaCharts.loan.outliers.dscr || 0 }}
+    </div>
+  </mat-card>
+
+  <mat-card class="summary-card" *ngIf="forecaster">
+    <div class="title-row">
+      <mat-card-title>Regression Forecaster</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('forecaster', explainPrompts.forecaster, {forecaster})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.forecaster?.text">
+      <span *ngIf="cardExplain.forecaster.loading">Loading…</span>
+      <span *ngIf="!cardExplain.forecaster.loading">{{ cardExplain.forecaster.text }}</span>
+    </div>
+    <div class="muted small chart-block" *ngIf="forecaster.engagement">
+      Engagement target: {{ forecaster.engagement.target }} | R² {{ forecaster.engagement.r2 | number:'1.2-2' }} | RMSE {{ forecaster.engagement.rmse | number:'1.1-1' }} | MAE {{ forecaster.engagement.mae | number:'1.1-1' }}
+      <div class="muted small">Coefficients:</div>
+      <ul class="muted small">
+        <li *ngFor="let c of forecaster.engagement?.coefficients | keyvalue">{{ c.key }}: {{ c.value | number:'1.2-2' }}</li>
+      </ul>
+    </div>
+    <div class="muted small chart-block" *ngIf="forecaster.yield">
+      Yield target: {{ forecaster.yield.target }} | R² {{ forecaster.yield.r2 | number:'1.2-2' }} | RMSE {{ forecaster.yield.rmse | number:'1.3-3' }} | MAE {{ forecaster.yield.mae | number:'1.3-3' }}
+      <div class="muted small">Coefficients:</div>
+      <ul class="muted small">
+        <li *ngFor="let c of forecaster.yield?.coefficients | keyvalue">{{ c.key }}: {{ c.value | number:'1.2-2' }}</li>
+      </ul>
+    </div>
+  </mat-card>
+
+  <mat-card class="summary-card" *ngIf="regressionKpi">
+    <div class="title-row">
+      <mat-card-title>Regression KPI Table</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('regressionKpi', explainPrompts.regressionKpi, {regressionKpi})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.regressionKpi?.text">
+      <span *ngIf="cardExplain.regressionKpi.loading">Loading…</span>
+      <span *ngIf="!cardExplain.regressionKpi.loading">{{ cardExplain.regressionKpi.text }}</span>
+    </div>
+    <div class="muted small">Engagement targets</div>
+    <table class="data-table small-table" *ngIf="regressionKpi.engagement?.length">
+      <tr><th>Features</th><th>R²</th><th>RMSE</th><th>MAE</th></tr>
+      <tr *ngFor="let row of regressionKpi.engagement">
+        <td>{{ row.features.join(', ') }}</td>
+        <td>{{ row.r2 | number:'1.2-2' }}</td>
+        <td>{{ row.rmse | number:'1.2-2' }}</td>
+        <td>{{ row.mae | number:'1.2-2' }}</td>
+      </tr>
+    </table>
+    <div class="muted small">Yield targets</div>
+    <table class="data-table small-table" *ngIf="regressionKpi.yield?.length">
+      <tr><th>Features</th><th>R²</th><th>RMSE</th><th>MAE</th></tr>
+      <tr *ngFor="let row of regressionKpi.yield">
+        <td>{{ row.features.join(', ') }}</td>
+        <td>{{ row.r2 | number:'1.2-2' }}</td>
+        <td>{{ row.rmse | number:'1.3-3' }}</td>
+        <td>{{ row.mae | number:'1.3-3' }}</td>
+      </tr>
+    </table>
+  </mat-card>
+
+  <mat-card class="summary-card" *ngIf="dashboardContrib.investor || dashboardContrib.loan">
+    <div class="title-row">
+      <mat-card-title>Per-Entity Drivers (Dashboard)</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('drivers', explainPrompts.drivers, {investor: dashboardContrib.investor, loan: dashboardContrib.loan})">Explain</button>
+    </div>
+    <div class="muted small explain-text" *ngIf="cardExplain.drivers?.text">
+      <span *ngIf="cardExplain.drivers.loading">Loading…</span>
+      <span *ngIf="!cardExplain.drivers.loading">{{ cardExplain.drivers.text }}</span>
+    </div>
+    <div class="row">
+      <div class="col" *ngIf="investors?.length">
+        <mat-form-field appearance="fill" class="compact">
+          <mat-label>Select investor</mat-label>
+          <mat-select [value]="selectedInvestorId" (selectionChange)="setSelectedInvestor($event.value)">
+            <mat-option *ngFor="let inv of investors" [value]="inv.id">{{ inv.name }} ({{ inv.id }})</mat-option>
+          </mat-select>
+        </mat-form-field>
+        <canvas *ngIf="dashboardContrib.investor" baseChart [data]="dashboardContrib.investor" [options]="chartOptions" [type]="'bar'"></canvas>
+      </div>
+      <div class="col" *ngIf="loans?.length">
+        <mat-form-field appearance="fill" class="compact">
+          <mat-label>Select loan</mat-label>
+          <mat-select [value]="selectedLoanId" (selectionChange)="setSelectedLoan($event.value)">
+            <mat-option *ngFor="let loan of loans" [value]="loan.id">Loan {{ loan.id }} ({{ loan.sector }})</mat-option>
+          </mat-select>
+        </mat-form-field>
+        <canvas *ngIf="dashboardContrib.loan" baseChart [data]="dashboardContrib.loan" [options]="chartOptions" [type]="'bar'"></canvas>
+      </div>
+    </div>
+    <div class="muted small">Logistic-based contributions approximating SHAP for current portfolio entities.</div>
+  </mat-card>
+
+  <mat-tab-group class="selection-tabs">
+    <mat-tab label="Selection Lab">
+      <div class="tab-grid selection-columns">
+        <mat-card class="summary-card col-span-6" *ngIf="selectionCurves?.datasets?.length">
+          <div class="title-row">
+            <mat-card-title>Model Selection (RF estimators)</mat-card-title>
+            <button class="explain-btn" (click)="explainCard('selectionRf', explainPrompts.selectionRf, {curves: selectionCurves})">Explain</button>
+          </div>
+          <div class="muted small explain-text" *ngIf="cardExplain.selectionRf?.text">
+            <span *ngIf="cardExplain.selectionRf.loading">Loading…</span>
+            <span *ngIf="!cardExplain.selectionRf.loading">{{ cardExplain.selectionRf.text }}</span>
+          </div>
+          <div class="muted small">Train vs validation vs CV AUC</div>
+          <div class="chart-block">
+            <canvas baseChart [data]="selectionCurves" [options]="selectionOptions" [type]="'line'"></canvas>
+          </div>
+        </mat-card>
+        <mat-card class="summary-card col-span-6" *ngIf="selectionCurvesDefault?.datasets?.length">
+          <div class="title-row">
+            <mat-card-title>Model Selection (RF estimators – Default)</mat-card-title>
+            <button class="explain-btn" (click)="explainCard('selectionRfDefault', explainPrompts.selectionRfDefault, {curves: selectionCurvesDefault})">Explain</button>
+          </div>
+          <div class="muted small explain-text" *ngIf="cardExplain.selectionRfDefault?.text">
+            <span *ngIf="cardExplain.selectionRfDefault.loading">Loading…</span>
+            <span *ngIf="!cardExplain.selectionRfDefault.loading">{{ cardExplain.selectionRfDefault.text }}</span>
+          </div>
+          <div class="muted small">Train vs validation vs CV AUC</div>
+          <div class="chart-block">
+            <canvas baseChart [data]="selectionCurvesDefault" [options]="selectionOptions" [type]="'line'"></canvas>
+          </div>
+        </mat-card>
+        <mat-card class="summary-card col-span-6" *ngIf="selectionCurvesGb?.datasets?.length">
+          <div class="title-row">
+            <mat-card-title>Gradient Boosting Sweep (Churn)</mat-card-title>
+            <button class="explain-btn" (click)="explainCard('selectionGb', explainPrompts.selectionGb, {curves: selectionCurvesGb})">Explain</button>
+          </div>
+          <div class="muted small explain-text" *ngIf="cardExplain.selectionGb?.text">
+            <span *ngIf="cardExplain.selectionGb.loading">Loading…</span>
+            <span *ngIf="!cardExplain.selectionGb.loading">{{ cardExplain.selectionGb.text }}</span>
+          </div>
+          <div class="muted small">Learning rate sweep train/val/CV</div>
+          <div class="chart-block">
+            <canvas baseChart [data]="selectionCurvesGb" [options]="selectionOptions" [type]="'line'"></canvas>
+          </div>
+        </mat-card>
+        <mat-card class="summary-card col-span-6" *ngIf="selectionCurvesGbDefault?.datasets?.length">
+          <div class="title-row">
+            <mat-card-title>Gradient Boosting Sweep (Default)</mat-card-title>
+            <button class="explain-btn" (click)="explainCard('selectionGbDefault', explainPrompts.selectionGbDefault, {curves: selectionCurvesGbDefault})">Explain</button>
+          </div>
+          <div class="muted small explain-text" *ngIf="cardExplain.selectionGbDefault?.text">
+            <span *ngIf="cardExplain.selectionGbDefault.loading">Loading…</span>
+            <span *ngIf="!cardExplain.selectionGbDefault.loading">{{ cardExplain.selectionGbDefault.text }}</span>
+          </div>
+          <div class="muted small">Learning rate sweep train/val/CV</div>
+          <div class="chart-block">
+            <canvas baseChart [data]="selectionCurvesGbDefault" [options]="selectionOptions" [type]="'line'"></canvas>
+          </div>
+        </mat-card>
+        <mat-card class="summary-card col-span-6" *ngIf="predictorCharts.families || predictorCharts.familiesDefault">
+          <div class="title-row">
+            <mat-card-title>Model Comparator (AUC at 6m)</mat-card-title>
+            <button class="explain-btn" (click)="explainCard('familyOverlay', explainPrompts.familyOverlay, {metrics: modelMetrics})">Explain</button>
+          </div>
+          <div class="muted small explain-text" *ngIf="cardExplain.familyOverlay?.text">
+            <span *ngIf="cardExplain.familyOverlay.loading">Loading…</span>
+            <span *ngIf="!cardExplain.familyOverlay.loading">{{ cardExplain.familyOverlay.text }}</span>
+          </div>
+          <div class="muted small">Churn families</div>
+          <canvas *ngIf="predictorCharts.families" baseChart [data]="predictorCharts.families" [options]="chartOptions" [type]="'bar'"></canvas>
+          <div class="muted small">Default families</div>
+          <canvas *ngIf="predictorCharts.familiesDefault" baseChart [data]="predictorCharts.familiesDefault" [options]="chartOptions" [type]="'bar'"></canvas>
+        </mat-card>
+        <mat-card class="summary-card col-span-6" *ngIf="selectionSeedTable()?.rows?.length">
+          <div class="title-row">
+            <mat-card-title>Seed Variability (CV)</mat-card-title>
+            <button class="explain-btn" (click)="explainCard('seedVariability', explainPrompts.seedVariability, {seeds: selectionSeedTable()})">Explain</button>
+          </div>
+          <div class="muted small explain-text" *ngIf="cardExplain.seedVariability?.text">
+            <span *ngIf="cardExplain.seedVariability.loading">Loading…</span>
+            <span *ngIf="!cardExplain.seedVariability.loading">{{ cardExplain.seedVariability.text }}</span>
+          </div>
+          <div class="muted small">Seeds: {{ selectionSeedTable().seeds.join(', ') }}</div>
+          <table class="data-table small-table">
+            <tr><th>n_estimators</th><th *ngFor="let s of selectionSeedTable().seeds">Seed {{ s }}</th><th>Mean</th></tr>
+            <tr *ngFor="let row of selectionSeedTable().rows">
+              <td>{{ row.param }}</td>
+              <td *ngFor="let sc of row.scores">{{ sc | number:'1.2-2' }}</td>
+              <td>{{ row.mean | number:'1.2-2' }}</td>
+            </tr>
+          </table>
+        </mat-card>
+        <mat-card class="summary-card" *ngIf="hyperparams()?.churn">
+          <div class="title-row">
+            <mat-card-title>Hyperparameters (selected)</mat-card-title>
+            <button class="explain-btn" (click)="explainCard('hyperparams', explainPrompts.hyperparams, {hyper: hyperparams()})">Explain</button>
+          </div>
+          <div class="muted small explain-text" *ngIf="cardExplain.hyperparams?.text">
+            <span *ngIf="cardExplain.hyperparams.loading">Loading…</span>
+            <span *ngIf="!cardExplain.hyperparams.loading">{{ cardExplain.hyperparams.text }}</span>
+          </div>
+          <div class="muted small">Churn</div>
+          <ul class="muted small">
+            <li *ngFor="let key of (hyperparams().churn | keyvalue)">{{ key.key }}: {{ key.value | json }}</li>
+          </ul>
+          <div class="muted small">Default</div>
+          <ul class="muted small">
+            <li *ngFor="let key of (hyperparams().default | keyvalue)">{{ key.key }}: {{ key.value | json }}</li>
+          </ul>
+        </mat-card>
+        <mat-card class="summary-card" *ngIf="singleFeatureCharts.churn || singleFeatureCharts.default">
+          <div class="title-row">
+            <mat-card-title>Single-Feature Benchmarks</mat-card-title>
+            <button class="explain-btn" (click)="explainCard('singleFeature', explainPrompts.singleFeature, {single: singleFeatureCharts})">Explain</button>
+          </div>
+          <div class="muted small explain-text" *ngIf="cardExplain.singleFeature?.text">
+            <span *ngIf="cardExplain.singleFeature.loading">Loading…</span>
+            <span *ngIf="!cardExplain.singleFeature.loading">{{ cardExplain.singleFeature.text }}</span>
+          </div>
+          <div class="muted small" *ngIf="singleFeatureCharts.churn">Churn</div>
+          <canvas *ngIf="singleFeatureCharts.churn" baseChart [data]="singleFeatureCharts.churn" [options]="chartOptions" [type]="'bar'"></canvas>
+          <div class="muted small" *ngIf="singleFeatureCharts.default">Default</div>
+          <canvas *ngIf="singleFeatureCharts.default" baseChart [data]="singleFeatureCharts.default" [options]="chartOptions" [type]="'bar'"></canvas>
+        </mat-card>
+        <mat-card class="summary-card" *ngIf="segmentRocCharts.churn || segmentRocCharts.default">
+          <div class="title-row">
+            <mat-card-title>Segment ROC Overlays</mat-card-title>
+            <button class="explain-btn" (click)="explainCard('segmentRoc', explainPrompts.segmentRoc, {segmentRocCharts})">Explain</button>
+          </div>
+          <div class="muted small explain-text" *ngIf="cardExplain.segmentRoc?.text">
+            <span *ngIf="cardExplain.segmentRoc.loading">Loading…</span>
+            <span *ngIf="!cardExplain.segmentRoc.loading">{{ cardExplain.segmentRoc.text }}</span>
+          </div>
+          <div class="muted small" *ngIf="segmentRocCharts.churn">Churn by risk tolerance (AUC)</div>
+          <canvas *ngIf="segmentRocCharts.churn" baseChart [data]="segmentRocCharts.churn" [options]="chartOptions" [type]="'bar'"></canvas>
+          <div class="muted small" *ngIf="segmentRocCharts.default">Default by sector (AUC)</div>
+          <canvas *ngIf="segmentRocCharts.default" baseChart [data]="segmentRocCharts.default" [options]="chartOptions" [type]="'bar'"></canvas>
+        </mat-card>
+        <mat-card class="summary-card" *ngIf="biasGapCharts.churn || biasGapCharts.default">
+          <div class="title-row">
+            <mat-card-title>Bias / Disparity (TPR gap)</mat-card-title>
+            <button class="explain-btn" (click)="explainCard('biasGap', explainPrompts.biasGap, {biasGapCharts})">Explain</button>
+          </div>
+          <div class="muted small explain-text" *ngIf="cardExplain.biasGap?.text">
+            <span *ngIf="cardExplain.biasGap.loading">Loading…</span>
+            <span *ngIf="!cardExplain.biasGap.loading">{{ cardExplain.biasGap.text }}</span>
+          </div>
+          <div class="muted small" *ngIf="biasGapCharts.churn">Churn TPR gap vs overall</div>
+          <canvas *ngIf="biasGapCharts.churn" baseChart [data]="biasGapCharts.churn" [options]="chartOptions" [type]="'bar'"></canvas>
+          <div class="muted small" *ngIf="biasGapCharts.default">Default TPR gap vs overall</div>
+          <canvas *ngIf="biasGapCharts.default" baseChart [data]="biasGapCharts.default" [options]="chartOptions" [type]="'bar'"></canvas>
+        </mat-card>
+        <mat-card class="summary-card" *ngIf="surfaceSlices.churn || surfaceSlices.default">
+          <div class="title-row">
+            <mat-card-title>What-if Contour Slices</mat-card-title>
+            <button class="explain-btn" (click)="explainCard('surfaceSlices', explainPrompts.surfaceSlices, {surfaceSlices})">Explain</button>
+          </div>
+          <div class="muted small explain-text" *ngIf="cardExplain.surfaceSlices?.text">
+            <span *ngIf="cardExplain.surfaceSlices.loading">Loading…</span>
+            <span *ngIf="!cardExplain.surfaceSlices.loading">{{ cardExplain.surfaceSlices.text }}</span>
+          </div>
+          <div class="muted small" *ngIf="surfaceSlices.churn">Churn surface (engagement × inactivity)</div>
+          <canvas *ngIf="surfaceSlices.churn" baseChart [data]="surfaceSlices.churn" [options]="surfaceOptions" [type]="'line'"></canvas>
+          <div class="muted small" *ngIf="surfaceSlices.default">Default surface (LTV × DSCR)</div>
+          <canvas *ngIf="surfaceSlices.default" baseChart [data]="surfaceSlices.default" [options]="surfaceOptions" [type]="'line'"></canvas>
+        </mat-card>
+        <mat-card class="summary-card" *ngIf="votingCharts.churn || votingCharts.default">
+          <div class="title-row">
+            <mat-card-title>Most Predictive (Voting Score)</mat-card-title>
+            <button class="explain-btn" (click)="explainCard('voting', explainPrompts.voting, {votingCharts})">Explain</button>
+          </div>
+          <div class="muted small explain-text" *ngIf="cardExplain.voting?.text">
+            <span *ngIf="cardExplain.voting.loading">Loading…</span>
+            <span *ngIf="!cardExplain.voting.loading">{{ cardExplain.voting.text }}</span>
+          </div>
+          <div class="muted small" *ngIf="votingCharts.churn">Churn</div>
+          <canvas *ngIf="votingCharts.churn" baseChart [data]="votingCharts.churn" [options]="chartOptions" [type]="'bar'"></canvas>
+          <div class="muted small" *ngIf="votingCharts.default">Default</div>
+          <canvas *ngIf="votingCharts.default" baseChart [data]="votingCharts.default" [options]="chartOptions" [type]="'bar'"></canvas>
+        </mat-card>
+      </div>
+    </mat-tab>
+    <mat-tab label="EDA & Sensitivity">
+      <div class="tab-grid">
+        <mat-card class="summary-card" *ngIf="edaSummary">
+          <mat-card-title>EDA Snapshot</mat-card-title>
+          <div class="muted small" *ngFor="let line of edaSummary.narrative">
+            • {{ line }}
+          </div>
+          <div class="muted small" *ngIf="edaSummary.investor_stats?.engagement_score">
+            Engagement p25/p50/p75: {{ edaSummary.investor_stats.engagement_score.p25 | number:'1.1-1' }} /
+            {{ edaSummary.investor_stats.engagement_score.p50 | number:'1.1-1' }} /
+            {{ edaSummary.investor_stats.engagement_score.p75 | number:'1.1-1' }}
+          </div>
+          <div class="muted small" *ngIf="edaSummary.loan_stats?.ltv_ratio">
+            LTV p50: {{ edaSummary.loan_stats.ltv_ratio.p50 | number:'1.2-2' }} |
+            DSCR p50: {{ edaSummary.loan_stats.dscr?.p50 | number:'1.2-2' }}
+          </div>
+        </mat-card>
+        <mat-card class="summary-card" *ngIf="sensitivityRows().churn.length || sensitivityRows().default.length">
+          <mat-card-title>Prediction Sensitivity (flip % &#64; ±0.5σ)</mat-card-title>
+          <div class="muted small">Churn</div>
+          <table class="data-table small-table">
+            <tr><th>Feature</th><th>Up</th><th>Down</th></tr>
+            <tr *ngFor="let row of sensitivityRows().churn">
+              <td>{{ row.feature }}</td>
+              <td>{{ row.up | number:'1.1-1' }}%</td>
+              <td>{{ row.down | number:'1.1-1' }}%</td>
+            </tr>
+          </table>
+          <div class="muted small">Default</div>
+          <table class="data-table small-table">
+            <tr><th>Feature</th><th>Up</th><th>Down</th></tr>
+            <tr *ngFor="let row of sensitivityRows().default">
+              <td>{{ row.feature }}</td>
+              <td>{{ row.up | number:'1.1-1' }}%</td>
+              <td>{{ row.down | number:'1.1-1' }}%</td>
+            </tr>
+          </table>
+        </mat-card>
+        <mat-card class="summary-card" *ngIf="imbalanceDetail">
+          <mat-card-title>Imbalance & Bias</mat-card-title>
+          <div class="muted small" *ngIf="imbalanceDetail.churn">
+            Churn positive rate: {{ imbalanceDetail.churn.positive_rate | number:'1.2-2' }} (n={{ imbalanceDetail.churn.count }})
+          </div>
+          <div class="muted small" *ngIf="imbalanceDetail.churn?.segment_positive_rate">
+            By tolerance:
+            <span *ngFor="let kv of (imbalanceDetail.churn.segment_positive_rate | keyvalue)">
+              {{ kv.key }} {{ kv.value | number:'1.2-2' }}
+            </span>
+          </div>
+          <div class="muted small" *ngIf="imbalanceDetail.default">
+            Default positive rate: {{ imbalanceDetail.default.positive_rate | number:'1.2-2' }} (n={{ imbalanceDetail.default.count }})
+          </div>
+          <div class="muted small" *ngIf="imbalanceDetail.default?.segment_positive_rate">
+            By sector:
+            <span *ngFor="let kv of (imbalanceDetail.default.segment_positive_rate | keyvalue)">
+              {{ kv.key }} {{ kv.value | number:'1.2-2' }}
+            </span>
+          </div>
+        </mat-card>
+        <mat-card class="summary-card" *ngIf="coeffStability?.churn || coeffStability?.default">
+          <mat-card-title>Coefficient Stability (CI)</mat-card-title>
+          <div class="muted small" *ngIf="coeffStability.churn?.engagement_score">
+            Churn engagement_score CI: {{ coeffStability.churn.engagement_score.p2_5 | number:'1.2-2' }} – {{ coeffStability.churn.engagement_score.p97_5 | number:'1.2-2' }}
+          </div>
+          <div class="muted small" *ngIf="coeffStability.churn?.inactivity_days">
+            Churn inactivity_days CI: {{ coeffStability.churn.inactivity_days.p2_5 | number:'1.2-2' }} – {{ coeffStability.churn.inactivity_days.p97_5 | number:'1.2-2' }}
+          </div>
+          <div class="muted small" *ngIf="coeffStability.default?.ltv_ratio">
+            Default LTV CI: {{ coeffStability.default.ltv_ratio.p2_5 | number:'1.2-2' }} – {{ coeffStability.default.ltv_ratio.p97_5 | number:'1.2-2' }}
+          </div>
+          <div class="muted small" *ngIf="coeffStability.default?.dscr">
+            Default DSCR CI: {{ coeffStability.default.dscr.p2_5 | number:'1.2-2' }} – {{ coeffStability.default.dscr.p97_5 | number:'1.2-2' }}
+          </div>
+        </mat-card>
+      </div>
+    </mat-tab>
+    <mat-tab label="Missingness & Imputation">
+      <div class="tab-grid">
+        <mat-card class="summary-card" *ngIf="imputationRows().churn.length || imputationRows().default.length">
+          <mat-card-title>Missing Data Imputation (AUC)</mat-card-title>
+          <div class="muted small">Churn</div>
+          <table class="data-table small-table">
+            <tr><th>Strategy</th><th>AUC</th><th>Avg Precision</th><th>Retained</th></tr>
+            <tr *ngFor="let row of imputationRows().churn">
+              <td>{{ row.strategy }}</td>
+              <td>{{ row.auc | number:'1.2-2' }}</td>
+              <td>{{ row.ap | number:'1.2-2' }}</td>
+              <td>{{ row.retained | number:'1.0-0' }}%</td>
+            </tr>
+          </table>
+          <div class="muted small" *ngIf="imputationRows().bestChurn">Recommended: {{ imputationRows().bestChurn.strategy }}</div>
+          <div class="muted small">Default</div>
+          <table class="data-table small-table">
+            <tr><th>Strategy</th><th>AUC</th><th>Avg Precision</th><th>Retained</th></tr>
+            <tr *ngFor="let row of imputationRows().default">
+              <td>{{ row.strategy }}</td>
+              <td>{{ row.auc | number:'1.2-2' }}</td>
+              <td>{{ row.ap | number:'1.2-2' }}</td>
+              <td>{{ row.retained | number:'1.0-0' }}%</td>
+            </tr>
+          </table>
+          <div class="muted small" *ngIf="imputationRows().bestDefault">Recommended: {{ imputationRows().bestDefault.strategy }}</div>
+        </mat-card>
+        <mat-card class="summary-card" *ngIf="missingnessGrid('investor')">
+          <mat-card-title>Missingness Heatmap (Investors by Risk Tolerance)</mat-card-title>
+          <table class="data-table small-table">
+            <tr>
+              <th>Field</th>
+              <th *ngFor="let col of missingnessGrid('investor').cols">{{ col }}</th>
+            </tr>
+            <tr *ngFor="let row of missingnessGrid('investor').rows; let idx = index">
+              <td>{{ row }}</td>
+              <td *ngFor="let colVal of missingnessGrid('investor').values[idx]">{{ colVal | number:'1.1-1' }}%</td>
+            </tr>
+          </table>
+        </mat-card>
+        <mat-card class="summary-card" *ngIf="missingnessGrid('loan')">
+          <mat-card-title>Missingness Heatmap (Loans by Sector)</mat-card-title>
+          <table class="data-table small-table">
+            <tr>
+              <th>Field</th>
+              <th *ngFor="let col of missingnessGrid('loan').cols">{{ col }}</th>
+            </tr>
+            <tr *ngFor="let row of missingnessGrid('loan').rows; let idx = index">
+              <td>{{ row }}</td>
+              <td *ngFor="let colVal of missingnessGrid('loan').values[idx]">{{ colVal | number:'1.1-1' }}%</td>
+            </tr>
+          </table>
+        </mat-card>
+      </div>
+    </mat-tab>
+  </mat-tab-group>
+
+  <mat-card class="summary-card" *ngIf="bootstrapStats()?.churn || bootstrapStats()?.default">
+    <mat-card-title>Bootstrap CI (logistic baseline)</mat-card-title>
+    <div class="muted small" *ngIf="bootstrapStats().churn?.auc">
+      Churn AUC ≈ {{ bootstrapStats().churn.auc.mean | number:'1.2-2' }}
+      [{{ bootstrapStats().churn.auc.ci[0] | number:'1.2-2' }} – {{ bootstrapStats().churn.auc.ci[1] | number:'1.2-2' }}]
+    </div>
+    <div class="muted small" *ngIf="bootstrapStats().default?.auc">
+      Default AUC ≈ {{ bootstrapStats().default.auc.mean | number:'1.2-2' }}
+      [{{ bootstrapStats().default.auc.ci[0] | number:'1.2-2' }} – {{ bootstrapStats().default.auc.ci[1] | number:'1.2-2' }}]
+    </div>
+  </mat-card>
+
+  <mat-card class="wide-card">
+    <mat-card-title>AUM Distribution</mat-card-title>
+    <canvas
+      baseChart
+      [data]="{ labels: charts.aumBuckets.labels, datasets: [{ data: charts.aumBuckets.data, backgroundColor: '#0ea5e9' }] }"
+      [options]="chartOptions"
+      [type]="'bar'">
+    </canvas>
+  </mat-card>
+
+  <mat-card class="wide-card">
+    <mat-card-title>Engagement & Yield (median)</mat-card-title>
+    <canvas
+      baseChart
+      [data]="{ labels: charts.yieldEngagementTrend?.labels || [], datasets: [{ data: charts.yieldEngagementTrend?.data || [], borderColor: '#19c3b1', backgroundColor: 'rgba(25,195,177,0.25)', tension: 0.3, fill: true }] }"
+      [options]="{ responsive: true, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#9bb0c9' } }, y: { ticks: { color: '#9bb0c9' }, beginAtZero: true } } }"
+      [type]="'line'">
+    </canvas>
+  </mat-card>
+
+  <mat-card class="wide-card">
+    <mat-card-title>Churn & Default Trend (synthetic)</mat-card-title>
+    <canvas
+      baseChart
+      [data]="{ labels: timeline.dates, datasets: [
+        { data: timeline.churn, label: 'Churn', borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.15)', tension: 0.25, fill: true },
+        { data: timeline.default, label: 'Default', borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.15)', tension: 0.25, fill: true }
+      ] }"
+      [options]="{ responsive: true, plugins: { legend: { labels: { color: '#9bb0c9' } } }, scales: { x: { ticks: { color: '#9bb0c9' } }, y: { ticks: { color: '#9bb0c9' }, beginAtZero: true } } }"
+      [type]="'line'">
+    </canvas>
+  </mat-card>
+
+  <mat-card class="wide-card">
+    <mat-card-title>DSCR Quantiles</mat-card-title>
+    <canvas
+      baseChart
+      [data]="{ labels: charts.dscrSummary?.labels || [], datasets: [{ data: charts.dscrSummary?.data || [], backgroundColor: '#f59e0b' }] }"
+      [options]="chartOptions"
+      [type]="'bar'">
+    </canvas>
+  </mat-card>
+
+  <mat-card class="wide-card">
+    <div class="title-row">
+      <mat-card-title>Report Preview</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('report', explainPrompts.report, {report})">Explain</button>
+    </div>
+    <pre class="report-text" *ngIf="report">{{ report.report_markdown }}</pre>
+  </mat-card>
+
+  <mat-card class="wide-card ai-card" id="ai-explain-card">
+    <div class="ai-header">
+      <mat-card-title>Explain with AI</mat-card-title>
+      <button mat-stroked-button color="accent" (click)="aiOpen = !aiOpen">
+        {{ aiOpen ? 'Minimize' : 'Open' }}
+      </button>
+    </div>
+    <div *ngIf="aiOpen">
+      <mat-form-field appearance="fill" class="full-width">
+        <mat-label>Ask a question about the data</mat-label>
+        <textarea matInput rows="3" [(ngModel)]="aiQuestion" placeholder="e.g., Which sectors drive default risk?"></textarea>
+      </mat-form-field>
+      <div class="ai-actions">
+        <button mat-stroked-button color="accent" (click)="explainDashboard()">Explain dashboard</button>
+        <button mat-flat-button color="primary" (click)="askAi()" [disabled]="aiLoading || !aiQuestion">
+        {{ aiLoading ? "Thinking..." : "Ask AI" }}
+        </button>
+      </div>
+      <div class="ai-answer" *ngIf="aiAnswer">
+        {{ aiAnswer }}
+      </div>
+    </div>
+  </mat-card>
+
+  <mat-card class="wide-card">
+    <div class="title-row">
+      <mat-card-title>Sample Investors ({{ filteredInvestors().length }})</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('samplesInvestors', explainPrompts.samplesInvestors, {investors: investorRows})">Explain</button>
+    </div>
+    <div class="table-actions">
+      <mat-form-field appearance="fill">
+        <mat-label>Filter investors</mat-label>
+        <input matInput (keyup)="applyInvestorFilter($event.target.value)" placeholder="Name, risk, etc." />
+      </mat-form-field>
+      <div class="pager">
+        <button mat-stroked-button color="accent" (click)="setInvestorPage(-1)">Prev</button>
+        <span class="muted">Page {{ investorPage + 1 }} / {{ Math.max(1, Math.ceil(filteredInvestors().length / pageSize)) }}</span>
+        <button mat-stroked-button color="accent" (click)="setInvestorPage(1)">Next</button>
+      </div>
+    </div>
+    <div class="table-wrap" *ngIf="filteredInvestors().length; else noInvestorRows">
+      <table>
+        <thead>
+          <tr>
+            <th (click)="toggleInvestorSort('name')" class="sortable">Name</th>
+            <th (click)="toggleInvestorSort('risk_tolerance')" class="sortable">Risk</th>
+            <th (click)="toggleInvestorSort('aum')" class="sortable">AUM</th>
+            <th (click)="toggleInvestorSort('engagement_score')" class="sortable">Engagement</th>
+            <th (click)="toggleInvestorSort('email_open_rate')" class="sortable">Open Rate</th>
+            <th (click)="toggleInvestorSort('distribution_yield')" class="sortable">Yield</th>
+            <th (click)="toggleInvestorSort('meetings_last_quarter')" class="sortable">Meetings</th>
+            <th (click)="toggleInvestorSort('risk_bucket')" class="sortable">Churn</th>
+          </tr>
+        </thead>
+        <tbody>
+        <tr *ngFor="let i of pagedInvestors()" (click)="selectInvestor(i)" [class.selected]="selectedInvestor?.id === i.id">
+          <td>{{ i.name }}</td>
+          <td><span class="chip" [ngClass]="i.risk_tolerance">{{ i.risk_tolerance }}</span></td>
+          <td>${{ i.aum | number:'1.0-0' }}</td>
+          <td>{{ i.engagement_score | number:'1.0-0' }}</td>
+          <td>{{ i.email_open_rate | percent:'1.0-0' }}</td>
+            <td>{{ i.distribution_yield | percent:'1.1-1' }}</td>
+            <td>{{ i.meetings_last_quarter }}</td>
+            <td><span class="chip" [ngClass]="i.risk_bucket?.toLowerCase()">{{ i.risk_bucket }}</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="pager">
+        <button mat-stroked-button color="accent" (click)="setInvestorPage(-1)" [disabled]="investorPage===0">Prev</button>
+        <span class="muted">Page {{ investorPage + 1 }} / {{ Math.max(1, Math.ceil(filteredInvestors().length / pageSize)) }}</span>
+        <button mat-stroked-button color="accent" (click)="setInvestorPage(1)" [disabled]="(investorPage +1) >= Math.ceil(filteredInvestors().length / pageSize)">Next</button>
+        <mat-form-field appearance="fill" class="page-size">
+          <mat-label>Rows</mat-label>
+          <mat-select [value]="pageSize" (selectionChange)="changePageSize($event.value)">
+            <mat-option *ngFor="let s of pageSizeOptions" [value]="s">{{ s }}</mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
+    </div>
+    <ng-template #noInvestorRows><div class="muted">No investor rows available.</div></ng-template>
+  </mat-card>
+
+  <mat-card class="wide-card">
+    <div class="title-row">
+      <mat-card-title>Sample Loans ({{ filteredLoans().length }})</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('samplesLoans', explainPrompts.samplesLoans, {loans: loanRows})">Explain</button>
+    </div>
+    <div class="table-actions">
+      <mat-form-field appearance="fill">
+        <mat-label>Filter loans</mat-label>
+        <input matInput (keyup)="applyLoanFilter($event.target.value)" placeholder="Sector, bucket, id..." />
+      </mat-form-field>
+      <div class="pager">
+        <button mat-stroked-button color="accent" (click)="setLoanPage(-1)">Prev</button>
+        <span class="muted">Page {{ loanPage + 1 }} / {{ Math.max(1, Math.ceil(filteredLoans().length / pageSize)) }}</span>
+        <button mat-stroked-button color="accent" (click)="setLoanPage(1)">Next</button>
+      </div>
+    </div>
+    <div class="table-wrap" *ngIf="filteredLoans().length; else noLoanRows">
+      <table>
+        <thead>
+          <tr>
+            <th (click)="toggleLoanSort('id')" class="sortable">ID</th>
+            <th (click)="toggleLoanSort('sector')" class="sortable">Sector</th>
+            <th (click)="toggleLoanSort('amount')" class="sortable">Amount</th>
+            <th (click)="toggleLoanSort('ltv_ratio')" class="sortable">LTV</th>
+            <th (click)="toggleLoanSort('term_months')" class="sortable">Term</th>
+            <th (click)="toggleLoanSort('dscr')" class="sortable">DSCR</th>
+            <th (click)="toggleLoanSort('risk_bucket')" class="sortable">Default</th>
+          </tr>
+        </thead>
+        <tbody>
+        <tr *ngFor="let l of pagedLoans()" (click)="selectLoan(l)" [class.selected]="selectedLoan?.id === l.id">
+          <td>#{{ l.id }}</td>
+          <td>{{ l.sector }}</td>
+          <td>${{ l.amount | number:'1.0-0' }}</td>
+          <td>{{ l.ltv_ratio | number:'1.2-2' }}</td>
+          <td>{{ l.term_months }} mo</td>
+          <td>{{ l.dscr | number:'1.2-2' }}</td>
+          <td><span class="chip" [ngClass]="l.risk_bucket?.toLowerCase()">{{ l.risk_bucket }}</span></td>
+        </tr>
+      </tbody>
+      </table>
+      <div class="pager">
+        <button mat-stroked-button color="accent" (click)="setLoanPage(-1)" [disabled]="loanPage===0">Prev</button>
+        <span class="muted">Page {{ loanPage + 1 }} / {{ Math.max(1, Math.ceil(filteredLoans().length / pageSize)) }}</span>
+        <button mat-stroked-button color="accent" (click)="setLoanPage(1)" [disabled]="(loanPage +1) >= Math.ceil(filteredLoans().length / pageSize)">Next</button>
+        <mat-form-field appearance="fill" class="page-size">
+          <mat-label>Rows</mat-label>
+          <mat-select [value]="pageSize" (selectionChange)="changePageSize($event.value)">
+            <mat-option *ngFor="let s of pageSizeOptions" [value]="s">{{ s }}</mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
+    </div>
+    <ng-template #noLoanRows><div class="muted">No loan rows available.</div></ng-template>
+  </mat-card>
+
+  <mat-card class="wide-card" *ngIf="selectedInvestor || selectedLoan">
+    <div class="title-row">
+      <mat-card-title>Explainability Snapshot</mat-card-title>
+      <button class="explain-btn" (click)="explainCard('explainability', explainPrompts.explainability, {investor: selectedInvestor, loan: selectedLoan})">Explain</button>
+    </div>
+    <div *ngIf="selectedInvestor">
+      <div class="muted small">Investor: {{ selectedInvestor.name }}</div>
+      <div class="muted small">Bucket: {{ selectedInvestor.risk_bucket }} | Engagement: {{ selectedInvestor.engagement_score }} | Inactivity days: {{ selectedInvestor.inactivity_days }}</div>
+      <div class="muted small">Open rate: {{ selectedInvestor.email_open_rate | percent:'1.0-0' }} | Meetings last qtr: {{ selectedInvestor.meetings_last_quarter }}</div>
+      <div class="muted small">Interpretation: lower engagement / higher inactivity pushes risk up; higher yield or meetings lower it.</div>
+    </div>
+    <div *ngIf="selectedLoan">
+      <div class="muted small">Loan #{{ selectedLoan.id }} | Sector {{ selectedLoan.sector }}</div>
+      <div class="muted small">Bucket: {{ selectedLoan.risk_bucket }} | LTV {{ selectedLoan.ltv_ratio | number:'1.2-2' }} | DSCR {{ selectedLoan.dscr | number:'1.2-2' }}</div>
+      <div class="muted small">Arrears: {{ selectedLoan.arrears_flag ? 'Yes' : 'No' }} | Collateral score {{ selectedLoan.collateral_score }}</div>
+      <div class="muted small">Interpretation: higher LTV + arrears increase default risk; stronger DSCR/collateral lowers it.</div>
+    </div>
+  </mat-card>
+</div>
+    <div class="muted small" *ngIf="modelMetrics?.bootstrap_coefficients?.churn">
+      Churn coeff CI (engagement): {{ modelMetrics.bootstrap_coefficients.churn.engagement_score?.p2_5 | number:'1.2-2' }} – {{ modelMetrics.bootstrap_coefficients.churn.engagement_score?.p97_5 | number:'1.2-2' }}
+    </div>
+    <div class="muted small" *ngIf="modelMetrics?.bootstrap_coefficients?.default">
+      Default coeff CI (LTV): {{ modelMetrics.bootstrap_coefficients.default.ltv_ratio?.p2_5 | number:'1.2-2' }} – {{ modelMetrics.bootstrap_coefficients.default.ltv_ratio?.p97_5 | number:'1.2-2' }}
+    </div>

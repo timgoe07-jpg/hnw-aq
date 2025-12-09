@@ -1,0 +1,22 @@
+<div class="actions">
+  <div>
+    <div class="page-title">Investor Personas</div>
+    <div class="muted">Reference personas used for matching and messaging.</div>
+  </div>
+  <button mat-stroked-button color="primary" (click)="fetch()" [disabled]="loading">
+    {{ loading ? "Loading..." : "Refresh personas" }}
+  </button>
+</div>
+
+<div class="grid">
+  <mat-card *ngFor="let persona of personas">
+    <mat-card-title>{{ persona.name }}</mat-card-title>
+    <mat-card-subtitle>{{ persona.short_label }}</mat-card-subtitle>
+    <p><strong>Primary goal:</strong> {{ persona.primary_goal || "N/A" }}</p>
+    <p><strong>Key concern:</strong> {{ persona.key_concern || "N/A" }}</p>
+    <p><strong>Why private credit appeals:</strong></p>
+    <ul>
+      <li *ngFor="let reason of persona.why_private_credit_appeals">{{ reason }}</li>
+    </ul>
+  </mat-card>
+</div>

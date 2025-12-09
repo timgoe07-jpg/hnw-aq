@@ -1,0 +1,36 @@
+<div class="ai-fab">
+  <button mat-fab color="accent" (click)="toggle()">
+    {{ open ? '×' : 'AI' }}
+  </button>
+</div>
+
+<div class="ai-panel" *ngIf="open" [style.height.px]="panelHeight">
+  <div class="drag-handle" (mousedown)="startDrag($event)"></div>
+  <div class="ai-header">
+    <div>
+      <div class="title">Ask Capspace AI</div>
+      <div class="subtitle">Context: {{ (router.url || 'page') | slice:1 }}</div>
+    </div>
+    <button mat-stroked-button color="accent" (click)="toggle()">Minimize</button>
+  </div>
+
+  <div class="history" *ngIf="history.length" #historyRef>
+    <div *ngFor="let h of history" [ngClass]="h.role">
+      <span class="role">{{ h.role === 'user' ? 'You' : 'AI' }}</span>
+      <div class="bubble">{{ h.content }}</div>
+    </div>
+  </div>
+
+  <mat-form-field appearance="fill" class="full-width input-field">
+    <mat-label>Ask anything about this page</mat-label>
+    <textarea
+      matInput
+      rows="3"
+      [(ngModel)]="question"
+      (keydown.enter)="onEnter($event)"
+      placeholder="e.g., What stands out in these results?"></textarea>
+  </mat-form-field>
+  <button mat-flat-button color="primary" class="send-btn" (click)="ask()" [disabled]="loading || !question">
+    {{ loading ? 'Thinking...' : 'Send' }}
+  </button>
+</div>

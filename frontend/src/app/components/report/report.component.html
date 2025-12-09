@@ -1,0 +1,247 @@
+<div class="actions">
+  <div>
+    <div class="page-title">Daily Risk & Engagement Report</div>
+    <div class="muted">Auto-generated summary for investor churn and loan default.</div>
+  </div>
+  <div class="action-buttons">
+    <mat-form-field appearance="fill" class="segment-select">
+      <mat-label>Segment type</mat-label>
+      <mat-select [(value)]="segmentType">
+        <mat-option value="">Global</mat-option>
+        <mat-option value="sector">Sector</mat-option>
+        <mat-option value="risk_tolerance">Risk tolerance</mat-option>
+        <mat-option value="aum_band">AUM band</mat-option>
+      </mat-select>
+    </mat-form-field>
+    <mat-form-field appearance="fill" class="segment-input" *ngIf="segmentType">
+      <mat-label>Segment value</mat-label>
+      <input matInput [(ngModel)]="segmentValue" placeholder="e.g. property or high" />
+    </mat-form-field>
+    <mat-form-field appearance="fill" class="segment-select">
+      <mat-label>Format</mat-label>
+      <mat-select [(value)]="reportFormat">
+        <mat-option *ngFor="let f of formats" [value]="f.value">{{ f.label }}</mat-option>
+      </mat-select>
+    </mat-form-field>
+    <button mat-flat-button color="primary" (click)="loadReport()" [disabled]="loading">
+      {{ loading ? "Generating..." : "Generate Daily Report" }}
+    </button>
+    <button mat-stroked-button color="accent" (click)="copyReport()" [disabled]="!report">
+      Copy to clipboard
+    </button>
+    <button mat-stroked-button color="primary" (click)="downloadReport()" [disabled]="!report">
+      Download .md
+    </button>
+    <button mat-stroked-button color="primary" (click)="downloadPdf()" [disabled]="!report">
+      Download PDF
+    </button>
+  </div>
+</div>
+<div class="timestamp" *ngIf="report">Generated {{ report?.generated_at | date: 'short' }}</div>
+
+<div class="loading" *ngIf="loading">
+  <mat-progress-spinner mode="indeterminate" diameter="40"></mat-progress-spinner>
+</div>
+
+<div *ngIf="report && !loading">
+  <div class="delta-grid" *ngIf="deltas">
+    <mat-card class="delta-card" *ngFor="let key of ['high_risk_investors_6m','high_risk_loans_6m','high_risk_exposure_6m','avg_churn_6m','avg_default_6m']">
+      <div class="delta-title">{{ key | titlecase }}</div>
+      <div class="delta-value">
+        {{ deltas[key]?.current | number: key.includes('exposure') ? '1.0-0' : '1.2-2' }}
+        <span class="delta" [ngClass]="{'up': (deltas[key]?.delta || 0) > 0, 'down': (deltas[key]?.delta || 0) < 0}">
+          {{ (deltas[key]?.delta || 0) | number: key.includes('exposure') ? '1.0-0' : '1.2-2' }}
+        </span>
+      </div>
+    </mat-card>
+  </div>
+
+  <div class="kpi-grid">
+    <mat-card class="stat-card">
+      <mat-card-title>Investor Buckets</mat-card-title>
+      <div class="stat-row">
+        <div>
+          <div class="label">High</div>
+          <div class="value danger">{{ report.summary_kpis.investor_buckets.High }}</div>
+        </div>
+        <div>
+          <div class="label">Medium</div>
+          <div class="value warn">{{ report.summary_kpis.investor_buckets.Medium }}</div>
+        </div>
+        <div>
+          <div class="label">Low</div>
+          <div class="value success">{{ report.summary_kpis.investor_buckets.Low }}</div>
+        </div>
+      </div>
+      <div class="muted">
+        Avg churn: {{ report.summary_kpis.avg_churn_risk | number: '1.2-2' }} (prev:
+        {{ report.summary_kpis.prev_day_avg_churn_risk | number: '1.2-2' }})
+      </div>
+      <div class="muted" *ngIf="report.summary_kpis.churn_by_tolerance">
+        High-risk churn by tolerance:
+        low={{ report.summary_kpis.churn_by_tolerance?.low || 0 }},
+        medium={{ report.summary_kpis.churn_by_tolerance?.medium || 0 }},
+        high={{ report.summary_kpis.churn_by_tolerance?.high || 0 }}
+      </div>
+      <div class="muted">
+        Engagement avg: {{ report.summary_kpis.engagement_avg | number: '1.1-1' }} |
+        Email open avg: {{ report.summary_kpis.email_open_avg | number: '1.2-2' }}
+      </div>
+      <div class="muted">
+        Distribution yield p50: {{ report.summary_kpis.distribution_yield?.p50 | number: '1.2-2' }}
+      </div>
+    </mat-card>
+
+    <mat-card class="stat-card">
+      <mat-card-title>Loan Buckets</mat-card-title>
+      <div class="stat-row">
+        <div>
+          <div class="label">High</div>
+          <div class="value danger">{{ report.summary_kpis.loan_buckets.High }}</div>
+        </div>
+        <div>
+          <div class="label">Medium</div>
+          <div class="value warn">{{ report.summary_kpis.loan_buckets.Medium }}</div>
+        </div>
+        <div>
+          <div class="label">Low</div>
+          <div class="value success">{{ report.summary_kpis.loan_buckets.Low }}</div>
+        </div>
+      </div>
+      <div class="muted">High-risk exposure: ${{ report.summary_kpis.high_default_exposure | number: '1.0-0' }}</div>
+      <div class="muted">
+        DSCR p50: {{ report.summary_kpis.dscr?.p50 | number: '1.2-2' }} | p25: {{ report.summary_kpis.dscr?.p25 | number: '1.2-2' }}
+      </div>
+      <div *ngIf="report.summary_kpis.sector_default">
+        <div class="muted">High-risk by sector:</div>
+        <ul class="list">
+          <li *ngFor="let entry of sectorEntries(report.summary_kpis.sector_default)">
+            {{ entry[0] }} — {{ entry[1].high }} loans, ${{ entry[1].exposure | number: '1.0-0' }}
+          </li>
+        </ul>
+      </div>
+    </mat-card>
+
+    <mat-card class="stat-card">
+      <mat-card-title>Top Investors</mat-card-title>
+      <ul class="list">
+        <li *ngFor="let inv of report.summary_kpis.top_investors">
+          {{ inv.name }} - {{ formatPercent(inv.probability) }} ({{ inv.bucket }})
+        </li>
+      </ul>
+    </mat-card>
+
+    <mat-card class="stat-card">
+      <mat-card-title>Top Loans</mat-card-title>
+      <ul class="list">
+        <li *ngFor="let loan of report.summary_kpis.top_loans">
+          #{{ loan.id }} in {{ loan.sector }} - ${{ loan.amount | number: '1.0-0' }}
+          ({{ formatPercent(loan.probability) }}, {{ loan.bucket }})
+        </li>
+      </ul>
+    </mat-card>
+  </div>
+
+  <mat-card class="report-card">
+    <mat-card-title>Report</mat-card-title>
+    <pre>{{ report.report_markdown }}</pre>
+    <div class="muted small">Base (full) report available for copy/download.</div>
+  </mat-card>
+
+  <div class="grid trend-grid">
+    <mat-card>
+      <mat-card-title>Engagement Trend</mat-card-title>
+      <canvas baseChart [data]="trendEngagement" [options]="{ responsive: true, plugins: { legend: { labels: { color: '#9bb0c9' } } }, scales: { x: { ticks: { color: '#9bb0c9' } }, y: { ticks: { color: '#9bb0c9' }, beginAtZero: true } } }" [type]="'line'"></canvas>
+    </mat-card>
+    <mat-card>
+      <mat-card-title>DSCR Trend</mat-card-title>
+      <canvas baseChart [data]="trendDscr" [options]="{ responsive: true, plugins: { legend: { labels: { color: '#9bb0c9' } } }, scales: { x: { ticks: { color: '#9bb0c9' } }, y: { ticks: { color: '#9bb0c9' }, beginAtZero: true } } }" [type]="'line'"></canvas>
+    </mat-card>
+  </div>
+
+  <div class="grid">
+    <mat-card *ngIf="report.summary_kpis.sector_default">
+      <mat-card-title>Sector Exposure (High Risk)</mat-card-title>
+      <table>
+        <thead>
+          <tr><th>Sector</th><th>High-Risk Loans</th><th>Exposure</th></tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let entry of sectorEntries(report.summary_kpis.sector_default)">
+            <td>{{ entry[0] }}</td>
+            <td>{{ entry[1].high }}</td>
+            <td>${{ entry[1].exposure | number:'1.0-0' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </mat-card>
+
+    <mat-card>
+      <mat-card-title>Top Investors & Loans</mat-card-title>
+      <div class="side-by-side">
+        <div>
+          <div class="muted">Investors</div>
+          <ul class="list">
+            <li *ngFor="let inv of report.summary_kpis.top_investors">
+              {{ inv.name }} — {{ formatPercent(inv.probability) }} ({{ inv.bucket }})
+            </li>
+          </ul>
+        </div>
+        <div>
+          <div class="muted">Loans</div>
+          <ul class="list">
+            <li *ngFor="let loan of report.summary_kpis.top_loans">
+              #{{ loan.id }} {{ loan.sector }} — ${{ loan.amount | number:'1.0-0' }} ({{ formatPercent(loan.probability) }}, {{ loan.bucket }})
+            </li>
+          </ul>
+        </div>
+      </div>
+    </mat-card>
+  </div>
+
+  <div class="playbooks" *ngIf="playbooks && (playbooks.investor_playbooks?.length || playbooks.loan_playbooks?.length)">
+    <h3>Today's Playbooks</h3>
+    <div class="playbook-grid">
+      <mat-card *ngFor="let pb of playbooks.investor_playbooks">
+        <mat-card-subtitle>Investor</mat-card-subtitle>
+        <mat-card-title>{{ pb.label }}</mat-card-title>
+        <p>{{ pb.action }}</p>
+        <div class="muted">{{ pb.count }} investors</div>
+      </mat-card>
+      <mat-card *ngFor="let pb of playbooks.loan_playbooks">
+        <mat-card-subtitle>Loan</mat-card-subtitle>
+        <mat-card-title>{{ pb.label }}</mat-card-title>
+        <p>{{ pb.action }}</p>
+        <div class="muted">{{ pb.count }} loans</div>
+      </mat-card>
+    </div>
+  </div>
+
+  <mat-card class="ai-card">
+    <div class="ai-header">
+      <mat-card-title>Explain with AI</mat-card-title>
+      <button mat-stroked-button color="accent" (click)="aiOpen = !aiOpen">
+        {{ aiOpen ? 'Minimize' : 'Open' }}
+      </button>
+    </div>
+    <div *ngIf="aiOpen">
+      <mat-form-field appearance="fill" class="full-width">
+        <mat-label>Ask about the report</mat-label>
+        <textarea matInput rows="3" [(ngModel)]="aiQuestion" placeholder="e.g., What should we action first?"></textarea>
+      </mat-form-field>
+      <div class="muted small">Templates:</div>
+      <div class="ai-actions">
+        <button mat-stroked-button color="accent" (click)="explainReportTemplate('Board summary')">Board summary</button>
+        <button mat-stroked-button color="accent" (click)="explainReportTemplate('RM call notes')">RM call notes</button>
+        <button mat-stroked-button color="accent" (click)="explainReportTemplate('IC pack highlights')">IC pack</button>
+        <button mat-stroked-button color="accent" (click)="explainReportTemplate('Email body for leadership')">Email body</button>
+      </div>
+      <button mat-flat-button color="primary" (click)="askAi()" [disabled]="aiLoading || !aiQuestion">
+        {{ aiLoading ? "Thinking..." : "Ask AI" }}
+      </button>
+      <div class="ai-answer" *ngIf="aiAnswer">
+        {{ aiAnswer }}
+      </div>
+    </div>
+  </mat-card>
+</div>

@@ -1,0 +1,21 @@
+<div class="actions">
+  <div>
+    <div class="page-title">Case Studies</div>
+    <div class="muted">Examples aligned to personas and sectors.</div>
+  </div>
+  <button mat-stroked-button color="primary" (click)="fetch()" [disabled]="loading">
+    {{ loading ? "Loading..." : "Refresh case studies" }}
+  </button>
+</div>
+
+<div class="grid">
+  <mat-card *ngFor="let cs of caseStudies">
+    <mat-card-title>{{ cs.title }}</mat-card-title>
+    <mat-card-subtitle *ngIf="cs.persona_name">Persona: {{ cs.persona_name }}</mat-card-subtitle>
+    <p><strong>Problem:</strong> {{ cs.problem }}</p>
+    <p><strong>Why it matters:</strong> {{ cs.why_it_matters }}</p>
+    <p><strong>Solution:</strong> {{ cs.solution }}</p>
+    <p><strong>Outcome:</strong> {{ cs.outcome }}</p>
+    <p *ngIf="cs.capspace_angle"><strong>Capspace angle:</strong> {{ cs.capspace_angle }}</p>
+  </mat-card>
+</div>

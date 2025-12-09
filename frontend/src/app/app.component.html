@@ -1,0 +1,15 @@
+<mat-toolbar color="primary" class="app-toolbar">
+  <span class="brand">Capspace Risk Lab</span>
+  <span class="spacer"></span>
+  <a mat-button routerLink="/dashboard" routerLinkActive="active-link">Dashboard</a>
+  <a mat-button routerLink="/predictions" routerLinkActive="active-link">Predictions</a>
+  <a mat-button routerLink="/report" routerLinkActive="active-link">Report</a>
+  <a mat-button routerLink="/personas" routerLinkActive="active-link">Personas</a>
+  <a mat-button routerLink="/case-studies" routerLinkActive="active-link">Case Studies</a>
+  <a mat-button routerLink="/match" routerLinkActive="active-link">LinkedIn Match</a>
+  <a mat-button routerLink="/calculator" routerLinkActive="active-link">Calculator</a>
+</mat-toolbar>
+<div class="content">
+  <router-outlet></router-outlet>
+  <app-ai-widget></app-ai-widget>
+</div>
