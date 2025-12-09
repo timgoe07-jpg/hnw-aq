@@ -14,7 +14,7 @@ import { MatchResponse } from "../models/match-result.model";
 
 @Injectable({ providedIn: "root" })
 export class ApiService {
-  private baseUrl = "http://localhost:5000/api";
+  private baseUrl = "https://hnw-aq.onrender.com/api";
 
   constructor(private http: HttpClient) {}
 
