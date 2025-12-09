@@ -1,0 +1,18 @@
+cd /Users/timgoerner/Desktop/HNW_aq
+
+# Create / overwrite .gitignore at the REPO ROOT
+cat > .gitignore << 'EOF'
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment
+.venv/
+
+# Node / Angular
+node_modules/
+frontend/.angular/
+
+# Local environment secrets
+.env
+EOF
