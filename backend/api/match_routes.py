@@ -179,9 +179,13 @@ def _search_with_fallbacks(
     max_results: int,
     free_text: str = "",
 ) -> Tuple[List[Dict[str, Any]], str, List[Dict[str, Any]]]:
-    queries = _build_query_candidates(keywords, free_text)
+
+    location = (filters or {}).get("location")
+    queries = _build_query_candidates(keywords, free_text, location)
+
     if not queries:
         queries = [DEFAULT_QUERY]
+
 
     filter_variants = _build_filter_variants(
         (filters or {}).get("location"),
